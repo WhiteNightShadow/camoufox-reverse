@@ -111,10 +111,8 @@ void PropertyTracer::Initialize(const std::string& baseDir,
     std::ofstream f(mControlPath);
     f << "on";
   }
-  fprintf(stderr, "PTRACE_INIT: this=%p, calling StartNewSession\n", (void*)this);
+  fprintf(stderr, "PropertyTracer: initialized, logDir=%s\n", mLogDir.c_str());
   StartNewSession();
-  fprintf(stderr, "PTRACE_INIT: mEnabled=%d, mCurrentFd=%d\n",
-          mEnabled.load() ? 1 : 0, mCurrentFd);
 
   // Start background threads
   mControlThread = std::thread(&PropertyTracer::ControlThreadLoop, this);
