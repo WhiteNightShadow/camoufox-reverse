@@ -5,7 +5,7 @@ Written by daijro.
 
 #pragma once
 #include "json.hpp"
-#include "PropertyTracer.hpp"
+#include "PropertyTracer.hpp"  // Only used for Initialize() in GetJson()
 #include <memory>
 #include <string>
 #include <tuple>
@@ -25,55 +25,6 @@ Written by daijro.
 #endif
 
 namespace MaskConfig {
-
-// Helper: split a config key like "navigator.userAgent" or "screen:width"
-// into object + property for PropertyTracer recording.
-// Only traces DOM-related keys, filters out Camoufox internal config queries.
-inline void TraceAccess(const std::string& key, const char* valStr = nullptr) {
-  if (!camou::PropertyTracer::Instance().IsEnabled()) return;
-
-  // Whitelist of DOM-related key prefixes that JSVMP might access.
-  // Internal config keys (debug, enableRemoteSubframes, memorysaver, etc.)
-  // are filtered out to avoid noise.
-  static const char* const kDomPrefixes[] = {
-      "navigator.", "screen.", "window.", "document.",
-      "battery:", "AudioContext:", "geolocation:",
-      "webGl:", "webGl2:", "fonts", "voices",
-      "headers.", "locale.", "timezone",
-      "pdfViewerEnabled",
-      nullptr
-  };
-
-  bool isDomKey = false;
-  for (const char* const* p = kDomPrefixes; *p; ++p) {
-    if (key.compare(0, strlen(*p), *p) == 0 || key == *p) {
-      isDomKey = true;
-      break;
-    }
-  }
-  if (!isDomKey) return;
-
-  // Find separator: '.' or ':'
-  auto dotPos = key.find('.');
-  auto colonPos = key.find(':');
-  size_t sepPos = std::string::npos;
-  if (dotPos != std::string::npos && colonPos != std::string::npos)
-    sepPos = std::min(dotPos, colonPos);
-  else if (dotPos != std::string::npos)
-    sepPos = dotPos;
-  else if (colonPos != std::string::npos)
-    sepPos = colonPos;
-
-  if (sepPos != std::string::npos) {
-    std::string obj = key.substr(0, sepPos);
-    std::string prop = key.substr(sepPos + 1);
-    camou::PropertyTracer::Instance().Record(obj.c_str(), prop.c_str(),
-                                             valStr, 0);
-  } else {
-    camou::PropertyTracer::Instance().Record("config", key.c_str(),
-                                             valStr, 0);
-  }
-}
 
 // Function to get the value of an environment variable as a UTF-8 string.
 inline std::optional<std::string> get_env_utf8(const std::string& name) {
@@ -164,13 +115,8 @@ inline bool HasKey(const std::string& key, const nlohmann::json& data) {
 
 inline std::optional<std::string> GetString(const std::string& key) {
   const auto& data = GetJson();
-  if (!HasKey(key, data)) {
-    TraceAccess(key);
-    return std::nullopt;
-  }
-  auto val = data[key].get<std::string>();
-  TraceAccess(key, val.c_str());
-  return val;
+  if (!HasKey(key, data)) return std::nullopt;
+  return data[key].get<std::string>();
 }
 
 inline std::vector<std::string> GetStringList(const std::string& key) {
@@ -195,16 +141,8 @@ inline std::vector<std::string> GetStringListLower(const std::string& key) {
 template <typename T>
 inline std::optional<T> GetUintImpl(const std::string& key) {
   const auto& data = GetJson();
-  if (!HasKey(key, data)) {
-    TraceAccess(key);
-    return std::nullopt;
-  }
-  if (data[key].is_number_unsigned()) {
-    auto val = data[key].get<T>();
-    auto s = std::to_string(val);
-    TraceAccess(key, s.c_str());
-    return val;
-  }
+  if (!HasKey(key, data)) return std::nullopt;
+  if (data[key].is_number_unsigned()) return data[key].get<T>();
   printf_stderr("ERROR: Value for key '%s' is not an unsigned integer\n",
                 key.c_str());
   return std::nullopt;
@@ -220,53 +158,26 @@ inline std::optional<uint32_t> GetUint32(const std::string& key) {
 
 inline std::optional<int32_t> GetInt32(const std::string& key) {
   const auto& data = GetJson();
-  if (!HasKey(key, data)) {
-    TraceAccess(key);
-    return std::nullopt;
-  }
-  if (data[key].is_number_integer()) {
-    auto val = data[key].get<int32_t>();
-    auto s = std::to_string(val);
-    TraceAccess(key, s.c_str());
-    return val;
-  }
+  if (!HasKey(key, data)) return std::nullopt;
+  if (data[key].is_number_integer()) return data[key].get<int32_t>();
   printf_stderr("ERROR: Value for key '%s' is not an integer\n", key.c_str());
   return std::nullopt;
 }
 
 inline std::optional<double> GetDouble(const std::string& key) {
   const auto& data = GetJson();
-  if (!HasKey(key, data)) {
-    TraceAccess(key);
-    return std::nullopt;
-  }
-  if (data[key].is_number_float()) {
-    auto val = data[key].get<double>();
-    auto s = std::to_string(val);
-    TraceAccess(key, s.c_str());
-    return val;
-  }
-  if (data[key].is_number_unsigned() || data[key].is_number_integer()) {
-    auto val = static_cast<double>(data[key].get<int64_t>());
-    auto s = std::to_string(val);
-    TraceAccess(key, s.c_str());
-    return val;
-  }
+  if (!HasKey(key, data)) return std::nullopt;
+  if (data[key].is_number_float()) return data[key].get<double>();
+  if (data[key].is_number_unsigned() || data[key].is_number_integer())
+    return static_cast<double>(data[key].get<int64_t>());
   printf_stderr("ERROR: Value for key '%s' is not a double\n", key.c_str());
   return std::nullopt;
 }
 
 inline std::optional<bool> GetBool(const std::string& key) {
   const auto& data = GetJson();
-  if (!HasKey(key, data)) {
-    TraceAccess(key);
-    return std::nullopt;
-  }
-  if (data[key].is_boolean()) {
-    auto val = data[key].get<bool>();
-    TraceAccess(key, val ? "true" : "false");
-    return val;
-  }
+  if (!HasKey(key, data)) return std::nullopt;
+  if (data[key].is_boolean()) return data[key].get<bool>();
   printf_stderr("ERROR: Value for key '%s' is not a boolean\n", key.c_str());
   return std::nullopt;
 }
