@@ -168,10 +168,7 @@ void PropertyTracer::RecordSlow(const char* object, const char* property,
                .count();
   }
 
-  // Push to write buffer
-  std::lock_guard<std::mutex> lock(mBufferMutex);
-  if (mEventsThisSession >= mMaxEventsPerSession) return;
-
+  // Build JSONL line
   PropertyAccessEvent ev;
   ev.object = object ? object : "";
   ev.property = property ? property : "";
@@ -179,8 +176,16 @@ void PropertyTracer::RecordSlow(const char* object, const char* property,
   ev.tsMs = tsMs;
   ev.kind = kind;
 
-  mWriteBuffer.push_back(std::move(ev));
-  mEventsThisSession++;
+  std::string line;
+  line.reserve(200);
+  SerializeEvent(line, ev);
+
+  // Write directly to file (synchronous, no buffering)
+  std::lock_guard<std::mutex> lock(mSessionMutex);
+  if (mCurrentFd >= 0 && mEventsThisSession < mMaxEventsPerSession) {
+    (void)write(mCurrentFd, line.data(), line.size());
+    mEventsThisSession++;
+  }
 }
 
 void PropertyTracer::ControlThreadLoop() {
