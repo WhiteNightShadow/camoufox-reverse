@@ -28,8 +28,31 @@ namespace MaskConfig {
 
 // Helper: split a config key like "navigator.userAgent" or "screen:width"
 // into object + property for PropertyTracer recording.
+// Only traces DOM-related keys, filters out Camoufox internal config queries.
 inline void TraceAccess(const std::string& key, const char* valStr = nullptr) {
   if (!camou::PropertyTracer::Instance().IsEnabled()) return;
+
+  // Whitelist of DOM-related key prefixes that JSVMP might access.
+  // Internal config keys (debug, enableRemoteSubframes, memorysaver, etc.)
+  // are filtered out to avoid noise.
+  static const char* const kDomPrefixes[] = {
+      "navigator.", "screen.", "window.", "document.",
+      "battery:", "AudioContext:", "geolocation:",
+      "webGl:", "webGl2:", "fonts", "voices",
+      "headers.", "locale.", "timezone",
+      "pdfViewerEnabled",
+      nullptr
+  };
+
+  bool isDomKey = false;
+  for (const char* const* p = kDomPrefixes; *p; ++p) {
+    if (key.compare(0, strlen(*p), *p) == 0 || key == *p) {
+      isDomKey = true;
+      break;
+    }
+  }
+  if (!isDomKey) return;
+
   // Find separator: '.' or ':'
   auto dotPos = key.find('.');
   auto colonPos = key.find(':');
@@ -47,7 +70,7 @@ inline void TraceAccess(const std::string& key, const char* valStr = nullptr) {
     camou::PropertyTracer::Instance().Record(obj.c_str(), prop.c_str(),
                                              valStr, 0);
   } else {
-    camou::PropertyTracer::Instance().Record("misc", key.c_str(),
+    camou::PropertyTracer::Instance().Record("config", key.c_str(),
                                              valStr, 0);
   }
 }
