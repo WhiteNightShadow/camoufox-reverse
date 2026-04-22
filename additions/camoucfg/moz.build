@@ -10,6 +10,11 @@ with Files("**"):
 EXPORTS += [
     "MaskConfig.hpp",
     "MouseTrajectories.hpp",
+    "PropertyTracer.hpp",
+]
+
+UNIFIED_SOURCES += [
+    "PropertyTracer.cpp",
 ]
 
 LOCAL_INCLUDES += [
