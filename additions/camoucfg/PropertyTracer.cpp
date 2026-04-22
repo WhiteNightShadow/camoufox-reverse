@@ -106,16 +106,13 @@ void PropertyTracer::Initialize(const std::string& baseDir,
   mInitialized = true;
   mStop.store(false);
 
-  // Auto-start: if control file doesn't exist yet, start tracing immediately
-  // MCP can still write "off" to pause and "on" to resume
+  // Auto-start: begin tracing immediately, before background threads start.
+  // This ensures DOM getters called during browser startup are captured.
   {
-    std::string initCmd = ReadControlFile(mControlPath);
-    if (initCmd.empty() || initCmd == "off") {
-      // Write "on" to auto-start tracing
-      std::ofstream f(mControlPath);
-      f << "on";
-    }
+    std::ofstream f(mControlPath);
+    f << "on";
   }
+  StartNewSession();  // Sets mEnabled=true synchronously
 
   // Start background threads
   mControlThread = std::thread(&PropertyTracer::ControlThreadLoop, this);
