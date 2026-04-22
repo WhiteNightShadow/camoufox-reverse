@@ -61,13 +61,6 @@ class PropertyTracer {
   // ★ Hot path ★ — must be extremely fast
   inline void Record(const char* object, const char* property,
                      const char* value = nullptr, uint32_t kind = 0) {
-    // Debug: always log to stderr regardless of enabled state
-    static int callCount = 0;
-    if (++callCount <= 5) {
-      fprintf(stderr, "TRACE_RECORD: obj=%s prop=%s enabled=%d init=%d\n",
-              object ? object : "null", property ? property : "null",
-              mEnabled.load() ? 1 : 0, mInitialized ? 1 : 0);
-    }
     if (!mEnabled.load(std::memory_order_acquire)) return;
     RecordSlow(object, property, value, kind);
   }

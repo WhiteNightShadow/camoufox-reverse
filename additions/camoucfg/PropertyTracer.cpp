@@ -106,6 +106,17 @@ void PropertyTracer::Initialize(const std::string& baseDir,
   mInitialized = true;
   mStop.store(false);
 
+  // Auto-start: if control file doesn't exist yet, start tracing immediately
+  // MCP can still write "off" to pause and "on" to resume
+  {
+    std::string initCmd = ReadControlFile(mControlPath);
+    if (initCmd.empty() || initCmd == "off") {
+      // Write "on" to auto-start tracing
+      std::ofstream f(mControlPath);
+      f << "on";
+    }
+  }
+
   // Start background threads
   mControlThread = std::thread(&PropertyTracer::ControlThreadLoop, this);
   mFlushThread = std::thread(&PropertyTracer::FlushThreadLoop, this);
@@ -176,19 +187,18 @@ void PropertyTracer::RecordSlow(const char* object, const char* property,
 }
 
 void PropertyTracer::ControlThreadLoop() {
-  std::string lastCmd = "off";
+  std::string lastCmd = "";  // empty so first check always processes
   while (!mStop.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
     std::string cmd = ReadControlFile(mControlPath);
-    if (cmd == lastCmd) continue;
-
-    if (cmd == "on" && !mEnabled.load()) {
-      StartNewSession();
-    } else if (cmd == "off" && mEnabled.load()) {
-      StopSession();
+    if (cmd != lastCmd) {
+      if (cmd == "on" && !mEnabled.load()) {
+        StartNewSession();
+      } else if (cmd == "off" && mEnabled.load()) {
+        StopSession();
+      }
+      lastCmd = cmd;
     }
-    lastCmd = cmd;
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 }
 
