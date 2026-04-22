@@ -223,6 +223,48 @@ def main():
         ("Document", "SetCookie", "document", "cookie.set"),
     ], "Document.cpp")
 
+    # ==================== WebRTC ====================
+    process_file(src_dir, "dom/media/webrtc/jsapi/PeerConnectionImpl.cpp", [
+        ("PeerConnectionImpl", "CreateOffer", "webrtc", "createOffer"),
+        ("PeerConnectionImpl", "CreateAnswer", "webrtc", "createAnswer"),
+        ("PeerConnectionImpl", "CreateDataChannel", "webrtc", "createDataChannel"),
+    ], "PeerConnectionImpl.cpp")
+
+    # ==================== MediaDevices ====================
+    process_file(src_dir, "dom/media/MediaDevices.cpp", [
+        ("MediaDevices", "EnumerateDevices", "mediaDevices", "enumerateDevices"),
+        ("MediaDevices", "GetUserMedia", "mediaDevices", "getUserMedia"),
+    ], "MediaDevices.cpp")
+
+    # ==================== Storage ====================
+    process_file(src_dir, "dom/storage/LocalStorage.cpp", [
+        ("LocalStorage", "GetItem", "localStorage", "getItem"),
+        ("LocalStorage", "SetItem", "localStorage", "setItem"),
+    ], "LocalStorage.cpp")
+
+    process_file(src_dir, "dom/storage/SessionStorage.cpp", [
+        ("SessionStorage", "GetItem", "sessionStorage", "getItem"),
+        ("SessionStorage", "SetItem", "sessionStorage", "setItem"),
+    ], "SessionStorage.cpp")
+
+    # ==================== Fonts ====================
+    process_file(src_dir, "layout/style/FontFaceSet.cpp", [
+        ("FontFaceSet", "Check", "fonts", "check"),
+        ("FontFaceSet", "ForEach", "fonts", "forEach"),
+    ], "FontFaceSet.cpp")
+
+    # ==================== OffscreenCanvas ====================
+    process_file(src_dir, "dom/canvas/OffscreenCanvas.cpp", [
+        ("OffscreenCanvas", "GetContext", "offscreenCanvas", "getContext"),
+        ("OffscreenCanvas", "TransferToImageBitmap", "offscreenCanvas", "transferToImageBitmap"),
+    ], "OffscreenCanvas.cpp")
+
+    # ==================== Geolocation ====================
+    process_file(src_dir, "dom/geolocation/Geolocation.cpp", [
+        ("Geolocation", "GetCurrentPosition", "geolocation", "getCurrentPosition"),
+        ("Geolocation", "WatchPosition", "geolocation", "watchPosition"),
+    ], "Geolocation.cpp")
+
     print(f"\n=== Done. Run 'make build' now. ===")
 
 
