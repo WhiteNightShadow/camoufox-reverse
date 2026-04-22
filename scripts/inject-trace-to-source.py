@@ -6,10 +6,12 @@
 用法：python3 scripts/inject-trace-to-source.py <firefox-source-dir>
 示例：python3 scripts/inject-trace-to-source.py camoufox-135.0.1-beta.24
 
-覆盖 62 个 DOM getter/setter：
+覆盖 75 个 DOM getter/setter/call：
   Navigator(17) Screen(3) Window(13) WorkerNavigator(5) History(1) Battery(4)
   Canvas2D(1) HTMLCanvasElement(3) WebGL(4) AudioContext(2)
-  Plugins(3) MimeTypes(3) Performance(1) Document.cookie(2)
+  Plugins(2) MimeTypes(2) Performance(1) Document.cookie(2)
+  WebRTC(3) MediaDevices(2) LocalStorage(2) SessionStorage(2)
+  Fonts(2) OffscreenCanvas(2) Geolocation(2)
 """
 import re
 import sys
