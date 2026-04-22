@@ -27,18 +27,84 @@
 
 ## 安装
 
-### 前置条件
+### 1. 安装 MCP 工具（camoufox-reverse-mcp）
 
 ```bash
-pip install camoufox-reverse-mcp
-python3 -m camoufox fetch  # 先安装官方 Camoufox
+git clone https://github.com/WhiteNightShadow/camoufox-reverse-mcp.git
+cd camoufox-reverse-mcp
+pip install -e .
 ```
 
-### 下载 Camoufox-Reverse
+或者在 AI 编码工具（Cursor / Kiro / Claude Code）的对话框中输入：
 
-从 [GitHub Releases](https://github.com/WhiteNightShadow/camoufox-reverse/releases) 下载对应平台的 zip 包。
+```
+请帮我配置 camoufox-reverse-mcp：https://github.com/WhiteNightShadow/camoufox-reverse-mcp
+```
 
-### 替换浏览器
+AI 会自动完成克隆、安装依赖、配置 MCP Server。
+
+### MCP 客户端配置
+
+<details>
+<summary><b>Kiro（.kiro/settings/mcp.json）</b></summary>
+
+```json
+{
+  "mcpServers": {
+    "camoufox-reverse": {
+      "command": "python",
+      "args": ["-m", "camoufox_reverse_mcp"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Cursor（.cursor/mcp.json）</b></summary>
+
+```json
+{
+  "mcpServers": {
+    "camoufox-reverse": {
+      "command": "python",
+      "args": ["-m", "camoufox_reverse_mcp"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+```json
+{
+  "mcpServers": {
+    "camoufox-reverse": {
+      "command": "python",
+      "args": ["-m", "camoufox_reverse_mcp", "--headless"]
+    }
+  }
+}
+```
+</details>
+
+### 2. 安装官方 Camoufox 浏览器（默认）
+
+```bash
+python3 -m camoufox fetch
+```
+
+这会下载官方 Camoufox 浏览器。MCP 的 32 个核心工具（Hook、网络捕获、脚本分析等）全部可用。
+
+### 3. 安装 Camoufox-Reverse 定制版浏览器（可选，启用引擎层追踪）
+
+> 只有需要 `trace_property_access` 引擎层追踪时才需要此步骤。不装定制版，其他 32 个工具照常使用。
+
+从 [GitHub Releases](https://github.com/WhiteNightShadow/camoufox-reverse/releases) 下载对应平台的 zip 包，替换官方浏览器。
+
+### 替换为定制版浏览器
 
 **macOS (Apple Silicon)**
 
