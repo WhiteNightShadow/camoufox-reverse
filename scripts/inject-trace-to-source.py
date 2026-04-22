@@ -27,14 +27,15 @@ def ensure_include(content: str) -> str:
             '#include "MaskConfig.hpp"',
             '#include "MaskConfig.hpp"\n' + INCLUDE_LINE, 1
         )
-    # 文件没有 MaskConfig.hpp，直接加 PropertyTracer.hpp
+    # 没有 MaskConfig.hpp 的文件：在第一个 #include 之前插入
+    # 这样保证在全局作用域，不会落入 namespace 内部
     lines = content.split("\n")
-    insert_idx = 0
     for i, line in enumerate(lines):
         if line.strip().startswith("#include"):
-            insert_idx = i + 1
-    lines.insert(insert_idx, INCLUDE_LINE)
-    return "\n".join(lines)
+            lines.insert(i, INCLUDE_LINE)
+            return "\n".join(lines)
+    # 没找到任何 include，插在文件开头
+    return INCLUDE_LINE + "\n" + content
 
 
 def ensure_local_includes(src_dir: str, rel_path: str):
