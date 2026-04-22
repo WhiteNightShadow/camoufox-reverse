@@ -107,12 +107,14 @@ void PropertyTracer::Initialize(const std::string& baseDir,
   mStop.store(false);
 
   // Auto-start: begin tracing immediately, before background threads start.
-  // This ensures DOM getters called during browser startup are captured.
   {
     std::ofstream f(mControlPath);
     f << "on";
   }
-  StartNewSession();  // Sets mEnabled=true synchronously
+  fprintf(stderr, "PTRACE_INIT: this=%p, calling StartNewSession\n", (void*)this);
+  StartNewSession();
+  fprintf(stderr, "PTRACE_INIT: mEnabled=%d, mCurrentFd=%d\n",
+          mEnabled.load() ? 1 : 0, mCurrentFd);
 
   // Start background threads
   mControlThread = std::thread(&PropertyTracer::ControlThreadLoop, this);
