@@ -244,25 +244,25 @@ void PropertyTracer::StartNewSession() {
   std::lock_guard<std::mutex> lock(mSessionMutex);
   if (mCurrentFd >= 0) return;  // already open
 
+  // Use parent PID for content processes (they share the same trace dir)
   pid_t pid = getpid();
   char path[1024];
   snprintf(path, sizeof(path), "%s/%d_%u.jsonl",
            mLogDir.c_str(), pid, mSessionId++);
 
-  int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+  int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0666);
+  if (fd < 0) {
+    // Content process sandbox may block writes. Try /tmp as fallback.
+    snprintf(path, sizeof(path), "/tmp/camoufox-trace-%d_%u.jsonl",
+             pid, mSessionId - 1);
+    fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0666);
+  }
   if (fd < 0) return;
 
   mCurrentFd = fd;
   mCurrentLogPath = path;
   mSessionStartTime = std::chrono::steady_clock::now();
   mEventsThisSession = 0;
-
-  // Clear leftover buffers
-  {
-    std::lock_guard<std::mutex> blk(mBufferMutex);
-    mWriteBuffer.clear();
-    mFlushBuffer.clear();
-  }
 
   mEnabled.store(true, std::memory_order_release);
 }
