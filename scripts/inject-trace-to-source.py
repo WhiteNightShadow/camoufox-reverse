@@ -27,6 +27,7 @@ def ensure_include(content: str) -> str:
             '#include "MaskConfig.hpp"',
             '#include "MaskConfig.hpp"\n' + INCLUDE_LINE, 1
         )
+    # 文件没有 MaskConfig.hpp，直接加 PropertyTracer.hpp
     lines = content.split("\n")
     insert_idx = 0
     for i, line in enumerate(lines):
@@ -34,6 +35,22 @@ def ensure_include(content: str) -> str:
             insert_idx = i + 1
     lines.insert(insert_idx, INCLUDE_LINE)
     return "\n".join(lines)
+
+
+def ensure_local_includes(src_dir: str, rel_path: str):
+    """确保文件所在目录的 moz.build 有 LOCAL_INCLUDES += ['/camoucfg']"""
+    dir_path = os.path.dirname(os.path.join(src_dir, rel_path))
+    mozbuild = os.path.join(dir_path, "moz.build")
+    if not os.path.exists(mozbuild):
+        return
+    with open(mozbuild, "r") as f:
+        content = f.read()
+    if "/camoucfg" in content:
+        return
+    # 追加到文件末尾
+    content += '\n\n# PropertyTracer\nLOCAL_INCLUDES += ["/camoucfg"]\n'
+    with open(mozbuild, "w") as f:
+        f.write(content)
 
 
 def inject_record(content, class_name, func_name, trace_obj, trace_prop):
@@ -62,6 +79,8 @@ def process_file(src_dir, rel_path, getters, label):
     if MARKER in content:
         print(f"  [SKIP] {label} already injected")
         return
+    # 确保 moz.build 有 /camoucfg include path
+    ensure_local_includes(src_dir, rel_path)
     content = ensure_include(content)
     count = 0
     for cls, func, obj, prop in getters:
