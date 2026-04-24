@@ -28,14 +28,6 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - target: macos
-            arch: arm64
-            moz_target: aarch64-apple-darwin
-            zip_name_suffix: mac.arm64
-          - target: macos
-            arch: x86_64
-            moz_target: x86_64-apple-darwin
-            zip_name_suffix: mac.x86_64
           - target: linux
             arch: x86_64
             moz_target: x86_64-pc-linux-gnu
@@ -44,6 +36,14 @@ jobs:
             arch: x86_64
             moz_target: x86_64-pc-mingw32
             zip_name_suffix: win.x86_64
+          - target: macos
+            arch: arm64
+            moz_target: aarch64-apple-darwin
+            zip_name_suffix: mac.arm64
+          - target: macos
+            arch: x86_64
+            moz_target: x86_64-apple-darwin
+            zip_name_suffix: mac.x86_64
 
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 240
