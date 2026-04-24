@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: 'Platforms to build (comma-separated: mac-arm64,mac-x86_64,linux-x86_64)'
+        description: 'Platforms to build (comma-separated: mac-arm64,mac-x86_64,linux-x86_64,win-x86_64)'
         required: false
-        default: 'mac-arm64,mac-x86_64,linux-x86_64'
+        default: 'mac-arm64,mac-x86_64,linux-x86_64,win-x86_64'
 
 env:
   FF_VERSION: '135.0.1'
@@ -35,6 +35,11 @@ jobs:
             arch: x86_64
             moz_target: x86_64-pc-linux-gnu
             zip_name_suffix: lin.x86_64
+            runner: ubuntu-latest
+          - target: windows
+            arch: x86_64
+            moz_target: x86_64-pc-mingw32
+            zip_name_suffix: win.x86_64
             runner: ubuntu-latest
 
     runs-on: ${{ matrix.runner }}
@@ -63,6 +68,10 @@ jobs:
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           source ~/.cargo/env
           rustup target add ${{ matrix.moz_target }}
+          # Windows cross-compile also needs MSVC target
+          if [ "${{ matrix.target }}" = "windows" ]; then
+            rustup target add x86_64-pc-windows-msvc
+          fi
           rustc --version
 
       - name: Cache Firefox source
