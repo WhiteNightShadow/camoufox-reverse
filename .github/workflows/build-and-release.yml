@@ -19,7 +19,7 @@ env:
 # Self-hosted runner: only 1 job at a time
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -55,13 +55,16 @@ jobs:
     steps:
       - name: Fix HOME for self-hosted runner
         run: |
-          # GitHub Actions overrides HOME to /home/runner on self-hosted
-          # We need /home/ubuntu where .mozbuild and .cargo live
           echo "HOME=/home/ubuntu" >> $GITHUB_ENV
           echo "CARGO_HOME=/home/ubuntu/.cargo" >> $GITHUB_ENV
           echo "RUSTUP_HOME=/home/ubuntu/.rustup" >> $GITHUB_ENV
           echo "/home/ubuntu/.cargo/bin" >> $GITHUB_PATH
           echo "/home/ubuntu/.mozbuild/clang/bin" >> $GITHUB_PATH
+
+      - name: Cleanup previous build
+        run: |
+          sudo rm -rf camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }} || true
+          rm -f camoufox-reverse-*.zip || true
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,42 +73,38 @@ jobs:
         run: |
           echo "HOME=$HOME"
           echo "MOZBUILD=$MOZBUILD_STATE_PATH"
-          echo "PATH=$PATH"
           df -h /
-          ls -la /home/ubuntu/.mozbuild/clang/bin/clang
+          ls /home/ubuntu/.mozbuild/clang/bin/clang
           rustc --version
           python3 --version
 
-      - name: Copy Firefox source from cache
+      - name: Link Firefox source
         run: |
-          CACHED_SRC="/home/ubuntu/camoufox-reverse/firefox-${{ env.FF_VERSION }}.source.tar.xz"
-          if [ -f "$CACHED_SRC" ]; then
-            echo "Using cached Firefox source"
-            ln -sf "$CACHED_SRC" firefox-${{ env.FF_VERSION }}.source.tar.xz
+          CACHED="/home/ubuntu/camoufox-reverse/firefox-${{ env.FF_VERSION }}.source.tar.xz"
+          if [ -f "$CACHED" ]; then
+            ln -sf "$CACHED" firefox-${{ env.FF_VERSION }}.source.tar.xz
           else
-            echo "Downloading Firefox source..."
             aria2c -x16 -s16 -k1M -o firefox-${{ env.FF_VERSION }}.source.tar.xz \
               "https://archive.mozilla.org/pub/firefox/releases/${{ env.FF_VERSION }}/source/firefox-${{ env.FF_VERSION }}.source.tar.xz"
           fi
-          ls -lh firefox-${{ env.FF_VERSION }}.source.tar.xz
 
       - name: Fix config.patch newline
         run: echo "" >> patches/config.patch
 
-      - name: Setup source (make dir)
-        run: make dir BUILD_TARGET=${{ matrix.target }},${{ matrix.arch }}
+      - name: Setup source (no git init)
+        run: |
+          # Use setup-minimal (skip git init which is very slow on 600MB+ source)
+          make setup-minimal
+          # Then run patch.py to apply patches and generate mozconfig
+          python3 scripts/patch.py ${{ env.FF_VERSION }} ${{ env.CF_RELEASE }}
+        env:
+          BUILD_TARGET: ${{ matrix.target }},${{ matrix.arch }}
 
       - name: Inject PropertyTracer
         run: |
-          python3 scripts/inject-trace-to-source.py camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
-          grep -q "camoucfg" camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}/moz.build || \
-            echo 'DIRS += ["camoucfg"]' >> camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}/moz.build
-
-      - name: Clean Unified caches
-        run: |
-          cd camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
-          find . -path "*/obj-*/dom/*/Unified_cpp_dom_*" -delete 2>/dev/null || true
-          find . -path "*/obj-*/layout/*/Unified_cpp_layout_*" -delete 2>/dev/null || true
+          SRC=camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+          python3 scripts/inject-trace-to-source.py $SRC
+          grep -q "camoucfg" $SRC/moz.build || echo 'DIRS += ["camoucfg"]' >> $SRC/moz.build
 
       - name: Build
         run: |
@@ -124,7 +123,6 @@ jobs:
           src_base = f"camoufox-{os.environ['FF_VERSION']}-{os.environ['CF_RELEASE']}/obj-${{ matrix.moz_target }}/dist/camoufox"
           out_zip = f"camoufox-reverse-{os.environ['FF_VERSION']}-{os.environ['CF_RELEASE']}-${{ matrix.zip_name_suffix }}.zip"
           target = "${{ matrix.target }}"
-
           with tempfile.TemporaryDirectory() as tmp:
               if target == "macos":
                   app_src = os.path.join(src_base, "Camoufox.app")
@@ -140,39 +138,32 @@ jobs:
                       else:
                           shutil.copy2(s, d)
                   res = tmp
-
               for f in ["settings/chrome.css", "settings/properties.json", "settings/camoucfg.jvv"]:
                   if os.path.exists(f):
                       shutil.copy2(f, res)
-
               fonts_dst = os.path.join(res, "fonts")
               os.makedirs(fonts_dst, exist_ok=True)
-              font_sources = {
-                  "macos": ["windows", "linux"],
-                  "linux": ["windows", "macos"],
-                  "windows": ["macos", "linux"],
-              }
+              font_sources = {"macos": ["windows", "linux"], "linux": ["windows", "macos"], "windows": ["macos", "linux"]}
               for fo in font_sources.get(target, []):
                   fd = os.path.join("bundle", "fonts", fo)
                   if os.path.isdir(fd):
                       for root, dirs, files in os.walk(fd):
                           for ff in files:
                               shutil.copy2(os.path.join(root, ff), fonts_dst)
-
               subprocess.run(["zip", "-r", "-9", "-y", os.path.abspath(out_zip), "."],
                            cwd=tmp, check=True, capture_output=True)
           print(f"Created: {out_zip}")
           PYEOF
-
-      - name: Cleanup build directory
-        if: always()
-        run: rm -rf camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: camoufox-reverse-${{ matrix.zip_name_suffix }}
           path: camoufox-reverse-*.zip
+
+      - name: Cleanup build directory
+        if: always()
+        run: sudo rm -rf camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }} || true
 
   release:
     needs: build
