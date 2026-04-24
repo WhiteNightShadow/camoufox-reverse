@@ -48,13 +48,21 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 240
 
-    env:
-      PATH: /home/ubuntu/.cargo/bin:/home/ubuntu/.mozbuild/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      HOME: /home/ubuntu
-      CARGO_HOME: /home/ubuntu/.cargo
-      RUSTUP_HOME: /home/ubuntu/.rustup
+    defaults:
+      run:
+        shell: bash
 
     steps:
+      - name: Fix HOME for self-hosted runner
+        run: |
+          # GitHub Actions overrides HOME to /home/runner on self-hosted
+          # We need /home/ubuntu where .mozbuild and .cargo live
+          echo "HOME=/home/ubuntu" >> $GITHUB_ENV
+          echo "CARGO_HOME=/home/ubuntu/.cargo" >> $GITHUB_ENV
+          echo "RUSTUP_HOME=/home/ubuntu/.rustup" >> $GITHUB_ENV
+          echo "/home/ubuntu/.cargo/bin" >> $GITHUB_PATH
+          echo "/home/ubuntu/.mozbuild/clang/bin" >> $GITHUB_PATH
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -62,8 +70,9 @@ jobs:
         run: |
           echo "HOME=$HOME"
           echo "MOZBUILD=$MOZBUILD_STATE_PATH"
+          echo "PATH=$PATH"
           df -h /
-          ls -la $MOZBUILD_STATE_PATH/clang/bin/clang
+          ls -la /home/ubuntu/.mozbuild/clang/bin/clang
           rustc --version
           python3 --version
 

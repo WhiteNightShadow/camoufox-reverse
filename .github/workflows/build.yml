@@ -1,10 +1,17 @@
-name: Build and Release
+name: Build and Release (upstream - disabled)
 
+# Disabled: replaced by build-and-release.yml (self-hosted runner)
+# on:
+#   workflow_dispatch:
+#   push:
+#     tags:
+#       - "*"
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "*"
+    inputs:
+      _unused:
+        description: 'This workflow is disabled. Use build-and-release.yml instead.'
+        required: false
 
 jobs:
   build:
