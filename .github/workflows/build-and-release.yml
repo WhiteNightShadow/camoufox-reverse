@@ -1,0 +1,190 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Platforms to build (comma-separated: mac-arm64,mac-x86_64,linux-x86_64)'
+        required: false
+        default: 'mac-arm64,mac-x86_64,linux-x86_64'
+
+env:
+  FF_VERSION: '135.0.1'
+  CF_RELEASE: 'beta.24'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos
+            arch: arm64
+            moz_target: aarch64-apple-darwin
+            zip_name_suffix: mac.arm64
+            runner: ubuntu-latest
+          - target: macos
+            arch: x86_64
+            moz_target: x86_64-apple-darwin
+            zip_name_suffix: mac.x86_64
+            runner: ubuntu-latest
+          - target: linux
+            arch: x86_64
+            moz_target: x86_64-pc-linux-gnu
+            zip_name_suffix: lin.x86_64
+            runner: ubuntu-latest
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
+          df -h /
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            git aria2 curl zip ccache msitools p7zip-full \
+            libsqlite3-dev libgtk-3-dev libdbus-glib-1-dev \
+            libasound2-dev libx11-xcb-dev libpulse-dev nasm
+
+      - name: Install Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source ~/.cargo/env
+          rustup target add ${{ matrix.moz_target }}
+          rustc --version
+
+      - name: Cache Firefox source
+        uses: actions/cache@v4
+        with:
+          path: firefox-${{ env.FF_VERSION }}.source.tar.xz
+          key: firefox-source-${{ env.FF_VERSION }}
+
+      - name: Download Firefox source
+        run: |
+          if [ ! -f firefox-${{ env.FF_VERSION }}.source.tar.xz ]; then
+            aria2c -x16 -s16 -k1M -o firefox-${{ env.FF_VERSION }}.source.tar.xz \
+              "https://archive.mozilla.org/pub/firefox/releases/${{ env.FF_VERSION }}/source/firefox-${{ env.FF_VERSION }}.source.tar.xz"
+          fi
+
+      - name: Fix config.patch newline
+        run: echo "" >> patches/config.patch
+
+      - name: Setup source (make dir)
+        run: |
+          source ~/.cargo/env
+          make dir BUILD_TARGET=${{ matrix.target }},${{ matrix.arch }}
+
+      - name: Inject PropertyTracer
+        run: |
+          python3 scripts/inject-trace-to-source.py camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+          grep -q "camoucfg" camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}/moz.build || \
+            echo 'DIRS += ["camoucfg"]' >> camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}/moz.build
+
+      - name: Cache mozbuild
+        uses: actions/cache@v4
+        with:
+          path: ~/.mozbuild
+          key: mozbuild-${{ matrix.moz_target }}-${{ env.FF_VERSION }}
+
+      - name: Bootstrap
+        run: |
+          cd camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+          source ~/.cargo/env
+          MOZBUILD_STATE_PATH=$HOME/.mozbuild ./mach --no-interactive bootstrap --application-choice=browser || true
+
+      - name: Build
+        run: |
+          cd camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+          source ~/.cargo/env
+          ./mach build
+
+      - name: Stage package
+        run: |
+          cd camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}/obj-${{ matrix.moz_target }}
+          make -C browser/installer stage-package
+
+      - name: Create zip
+        run: |
+          python3 << 'PYEOF'
+          import os, shutil, tempfile, subprocess
+          src_base = f"camoufox-{os.environ['FF_VERSION']}-{os.environ['CF_RELEASE']}/obj-${{ matrix.moz_target }}/dist/camoufox"
+          out_zip = f"camoufox-reverse-{os.environ['FF_VERSION']}-{os.environ['CF_RELEASE']}-${{ matrix.zip_name_suffix }}.zip"
+          target = "${{ matrix.target }}"
+
+          with tempfile.TemporaryDirectory() as tmp:
+              if target == "macos":
+                  app_src = os.path.join(src_base, "Camoufox.app")
+                  app_dst = os.path.join(tmp, "Camoufox.app")
+                  shutil.copytree(app_src, app_dst, symlinks=True)
+                  res = os.path.join(app_dst, "Contents", "Resources")
+              else:
+                  # Linux: flat directory
+                  for item in os.listdir(src_base):
+                      s = os.path.join(src_base, item)
+                      d = os.path.join(tmp, item)
+                      if os.path.isdir(s):
+                          shutil.copytree(s, d, symlinks=True)
+                      else:
+                          shutil.copy2(s, d)
+                  res = tmp
+
+              for f in ["settings/chrome.css", "settings/properties.json", "settings/camoucfg.jvv"]:
+                  if os.path.exists(f):
+                      shutil.copy2(f, res)
+
+              fonts_dst = os.path.join(res, "fonts")
+              os.makedirs(fonts_dst, exist_ok=True)
+              font_sources = {"macos": ["windows", "linux"], "linux": ["windows", "macos"]}
+              for fo in font_sources.get(target, []):
+                  fd = os.path.join("bundle", "fonts", fo)
+                  if os.path.isdir(fd):
+                      for root, dirs, files in os.walk(fd):
+                          for ff in files:
+                              shutil.copy2(os.path.join(root, ff), fonts_dst)
+
+              subprocess.run(["zip", "-r", "-9", "-y", os.path.abspath(out_zip), "."],
+                           cwd=tmp, check=True, capture_output=True)
+          print(f"Created: {out_zip}")
+          PYEOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: camoufox-reverse-${{ matrix.zip_name_suffix }}
+          path: camoufox-reverse-*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh camoufox-reverse-*.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: camoufox-reverse-*.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: true
