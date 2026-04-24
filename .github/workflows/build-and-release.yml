@@ -14,8 +14,9 @@ on:
 env:
   FF_VERSION: '135.0.1'
   CF_RELEASE: 'beta.24'
+  MOZBUILD_STATE_PATH: /home/ubuntu/.mozbuild
 
-# Self-hosted runner: only 1 job at a time to avoid disk/CPU contention
+# Self-hosted runner: only 1 job at a time
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: false
@@ -47,42 +48,31 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 240
 
+    env:
+      PATH: /home/ubuntu/.cargo/bin:/home/ubuntu/.mozbuild/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      HOME: /home/ubuntu
+      CARGO_HOME: /home/ubuntu/.cargo
+      RUSTUP_HOME: /home/ubuntu/.rustup
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check disk space
+      - name: Check environment
         run: |
+          echo "HOME=$HOME"
+          echo "MOZBUILD=$MOZBUILD_STATE_PATH"
           df -h /
-          echo "Available: $(df -h / | tail -1 | awk '{print $4}')"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            git aria2 curl zip ccache msitools p7zip-full \
-            libsqlite3-dev libgtk-3-dev libdbus-glib-1-dev \
-            libasound2-dev libx11-xcb-dev libpulse-dev nasm
-
-      - name: Setup Rust
-        run: |
-          if ! command -v rustup &>/dev/null; then
-            curl https://sh.rustup.rs -sSf | sh -s -- -y
-          fi
-          source ~/.cargo/env
-          rustup target add ${{ matrix.moz_target }}
-          if [ "${{ matrix.target }}" = "windows" ]; then
-            rustup target add x86_64-pc-windows-msvc
-          fi
+          ls -la $MOZBUILD_STATE_PATH/clang/bin/clang
           rustc --version
+          python3 --version
 
       - name: Copy Firefox source from cache
         run: |
-          # Self-hosted runner: reuse Firefox source from ~/camoufox-reverse/
-          CACHED_SRC="$HOME/camoufox-reverse/firefox-${{ env.FF_VERSION }}.source.tar.xz"
+          CACHED_SRC="/home/ubuntu/camoufox-reverse/firefox-${{ env.FF_VERSION }}.source.tar.xz"
           if [ -f "$CACHED_SRC" ]; then
-            echo "Using cached Firefox source from $CACHED_SRC"
-            cp "$CACHED_SRC" .
+            echo "Using cached Firefox source"
+            ln -sf "$CACHED_SRC" firefox-${{ env.FF_VERSION }}.source.tar.xz
           else
             echo "Downloading Firefox source..."
             aria2c -x16 -s16 -k1M -o firefox-${{ env.FF_VERSION }}.source.tar.xz \
@@ -94,9 +84,7 @@ jobs:
         run: echo "" >> patches/config.patch
 
       - name: Setup source (make dir)
-        run: |
-          source ~/.cargo/env
-          make dir BUILD_TARGET=${{ matrix.target }},${{ matrix.arch }}
+        run: make dir BUILD_TARGET=${{ matrix.target }},${{ matrix.arch }}
 
       - name: Inject PropertyTracer
         run: |
@@ -104,23 +92,15 @@ jobs:
           grep -q "camoucfg" camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}/moz.build || \
             echo 'DIRS += ["camoucfg"]' >> camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}/moz.build
 
-      - name: Symlink mozbuild (reuse existing toolchain)
+      - name: Clean Unified caches
         run: |
-          # Self-hosted runner: reuse ~/.mozbuild from previous builds
-          if [ -d "$HOME/.mozbuild/clang" ] && [ -d "$HOME/.mozbuild/MacOSX14.4.sdk" ]; then
-            echo "Reusing existing mozbuild toolchain"
-            ls -la $HOME/.mozbuild/
-          else
-            echo "Running bootstrap to download toolchain..."
-            cd camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
-            source ~/.cargo/env
-            MOZBUILD_STATE_PATH=$HOME/.mozbuild ./mach --no-interactive bootstrap --application-choice=browser || true
-          fi
+          cd camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+          find . -path "*/obj-*/dom/*/Unified_cpp_dom_*" -delete 2>/dev/null || true
+          find . -path "*/obj-*/layout/*/Unified_cpp_layout_*" -delete 2>/dev/null || true
 
       - name: Build
         run: |
           cd camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
-          source ~/.cargo/env
           ./mach build
 
       - name: Stage package
@@ -142,18 +122,7 @@ jobs:
                   app_dst = os.path.join(tmp, "Camoufox.app")
                   shutil.copytree(app_src, app_dst, symlinks=True)
                   res = os.path.join(app_dst, "Contents", "Resources")
-              elif target == "windows":
-                  # Windows: flat directory structure
-                  for item in os.listdir(src_base):
-                      s = os.path.join(src_base, item)
-                      d = os.path.join(tmp, item)
-                      if os.path.isdir(s):
-                          shutil.copytree(s, d, symlinks=True)
-                      else:
-                          shutil.copy2(s, d)
-                  res = tmp
               else:
-                  # Linux: flat directory
                   for item in os.listdir(src_base):
                       s = os.path.join(src_base, item)
                       d = os.path.join(tmp, item)
@@ -188,9 +157,7 @@ jobs:
 
       - name: Cleanup build directory
         if: always()
-        run: |
-          # Free disk space for next matrix job
-          rm -rf camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+        run: rm -rf camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
