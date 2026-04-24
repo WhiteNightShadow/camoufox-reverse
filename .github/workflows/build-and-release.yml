@@ -100,6 +100,29 @@ jobs:
         env:
           BUILD_TARGET: ${{ matrix.target }},${{ matrix.arch }}
 
+      - name: Patch mozconfig (disable-bootstrap + clang paths)
+        run: |
+          SRC=camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+          MOZBUILD=/home/ubuntu/.mozbuild
+          # Replace --enable-bootstrap with --disable-bootstrap
+          sed -i 's/--enable-bootstrap/--disable-bootstrap/' $SRC/mozconfig
+          # Add compiler paths and macOS SDK for cross-compile
+          cat >> $SRC/mozconfig << EOF
+
+          # CI: use pre-installed toolchain
+          ac_add_options --without-wasm-sandboxed-libraries
+          export CC="$MOZBUILD/clang/bin/clang"
+          export CXX="$MOZBUILD/clang/bin/clang++"
+          export HOST_CC="$MOZBUILD/clang/bin/clang"
+          export HOST_CXX="$MOZBUILD/clang/bin/clang++"
+          EOF
+          # macOS cross-compile needs SDK path
+          if [ "${{ matrix.target }}" = "macos" ]; then
+            echo "ac_add_options --with-macos-sdk=$MOZBUILD/MacOSX14.4.sdk" >> $SRC/mozconfig
+          fi
+          echo "=== Final mozconfig ==="
+          cat $SRC/mozconfig
+
       - name: Inject PropertyTracer
         run: |
           SRC=camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
