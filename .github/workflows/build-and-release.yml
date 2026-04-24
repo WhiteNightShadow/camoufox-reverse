@@ -100,16 +100,14 @@ jobs:
         env:
           BUILD_TARGET: ${{ matrix.target }},${{ matrix.arch }}
 
-      - name: Patch mozconfig (disable-bootstrap + clang paths)
+      - name: Patch mozconfig (disable-bootstrap + toolchain paths)
         run: |
           SRC=camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
           MOZBUILD=/home/ubuntu/.mozbuild
-          # Windows cross-compile REQUIRES --enable-bootstrap (it auto-configures
-          # clang-cl, MSVC headers, VFS overlay etc). Other targets use --disable-bootstrap.
-          if [ "${{ matrix.target }}" != "windows" ]; then
-            sed -i 's/--enable-bootstrap/--disable-bootstrap/' $SRC/mozconfig
-            # Add compiler paths
-            cat >> $SRC/mozconfig << EOF
+          # Always disable bootstrap (non-mozilla-central can't download toolchains)
+          sed -i 's/--enable-bootstrap/--disable-bootstrap/' $SRC/mozconfig
+          # Add compiler paths
+          cat >> $SRC/mozconfig << MOZEOF
 
           # CI: use pre-installed toolchain
           ac_add_options --without-wasm-sandboxed-libraries
@@ -117,15 +115,20 @@ jobs:
           export CXX="$MOZBUILD/clang/bin/clang++"
           export HOST_CC="$MOZBUILD/clang/bin/clang"
           export HOST_CXX="$MOZBUILD/clang/bin/clang++"
-          EOF
-          fi
+          MOZEOF
           # macOS cross-compile needs SDK path
           if [ "${{ matrix.target }}" = "macos" ]; then
             echo "ac_add_options --with-macos-sdk=$MOZBUILD/MacOSX14.4.sdk" >> $SRC/mozconfig
           fi
-          # Windows: set WINSYSROOT so bootstrap finds MSVC without downloading
+          # Windows cross-compile needs INCLUDE/LIB for MSVC headers and libs
           if [ "${{ matrix.target }}" = "windows" ]; then
-            echo "export WINSYSROOT=\"$MOZBUILD/vs\"" >> $SRC/mozconfig
+            MSVC="$MOZBUILD/vs/VC/Tools/MSVC/14.39.33519"
+            WINSDK="$MOZBUILD/vs/Windows Kits/10"
+            cat >> $SRC/mozconfig << MOZEOF
+          export WINSYSROOT="$MOZBUILD/vs"
+          export INCLUDE="$MSVC/include;$WINSDK/Include/10.0.22621.0/ucrt;$WINSDK/Include/10.0.22621.0/shared;$WINSDK/Include/10.0.22621.0/um;$WINSDK/Include/10.0.22621.0/winrt"
+          export LIB="$MSVC/lib/x64;$WINSDK/Lib/10.0.22621.0/ucrt/x64;$WINSDK/Lib/10.0.22621.0/um/x64"
+          MOZEOF
           fi
           echo "=== Final mozconfig ==="
           cat $SRC/mozconfig
