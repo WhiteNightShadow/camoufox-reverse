@@ -93,19 +93,28 @@ jobs:
 
       - name: Setup source (no git init)
         run: |
-          # Use setup-minimal (skip git init which is very slow on 600MB+ source)
+          # Use setup-minimal (skip full git init which is very slow on 600MB+ source)
           make setup-minimal
+          # Minimal git init needed for --enable-bootstrap to find toolchain artifacts
+          cd camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+          git init -b main
+          git add -f _READY moz.build browser/config/version.txt 2>/dev/null || true
+          git commit -m "init" --allow-empty
+          cd ..
           # Then run patch.py to apply patches and generate mozconfig
           python3 scripts/patch.py ${{ env.FF_VERSION }} ${{ env.CF_RELEASE }}
         env:
           BUILD_TARGET: ${{ matrix.target }},${{ matrix.arch }}
 
-      - name: Patch mozconfig (disable-bootstrap + toolchain paths)
+      - name: Patch mozconfig (toolchain paths)
         run: |
           SRC=camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
           MOZBUILD=/home/ubuntu/.mozbuild
-          # Always disable bootstrap (non-mozilla-central can't download toolchains)
-          sed -i 's/--enable-bootstrap/--disable-bootstrap/' $SRC/mozconfig
+          # Windows keeps --enable-bootstrap (needs clang-cl auto-config + VFS overlay)
+          # Other platforms use --disable-bootstrap + explicit compiler paths
+          if [ "${{ matrix.target }}" != "windows" ]; then
+            sed -i 's/--enable-bootstrap/--disable-bootstrap/' $SRC/mozconfig
+          fi
           # Add compiler paths
           cat >> $SRC/mozconfig << MOZEOF
 
@@ -120,7 +129,7 @@ jobs:
           if [ "${{ matrix.target }}" = "macos" ]; then
             echo "ac_add_options --with-macos-sdk=$MOZBUILD/MacOSX14.4.sdk" >> $SRC/mozconfig
           fi
-          # Windows cross-compile needs INCLUDE/LIB for MSVC headers and libs
+          # Windows cross-compile needs WINSYSROOT + INCLUDE/LIB
           if [ "${{ matrix.target }}" = "windows" ]; then
             MSVC="$MOZBUILD/vs/VC/Tools/MSVC/14.39.33519"
             WINSDK="$MOZBUILD/vs/Windows Kits/10"
