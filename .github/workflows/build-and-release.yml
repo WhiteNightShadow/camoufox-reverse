@@ -104,10 +104,12 @@ jobs:
         run: |
           SRC=camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
           MOZBUILD=/home/ubuntu/.mozbuild
-          # Replace --enable-bootstrap with --disable-bootstrap
-          sed -i 's/--enable-bootstrap/--disable-bootstrap/' $SRC/mozconfig
-          # Add compiler paths
-          cat >> $SRC/mozconfig << EOF
+          # Windows cross-compile REQUIRES --enable-bootstrap (it auto-configures
+          # clang-cl, MSVC headers, VFS overlay etc). Other targets use --disable-bootstrap.
+          if [ "${{ matrix.target }}" != "windows" ]; then
+            sed -i 's/--enable-bootstrap/--disable-bootstrap/' $SRC/mozconfig
+            # Add compiler paths
+            cat >> $SRC/mozconfig << EOF
 
           # CI: use pre-installed toolchain
           ac_add_options --without-wasm-sandboxed-libraries
@@ -116,11 +118,12 @@ jobs:
           export HOST_CC="$MOZBUILD/clang/bin/clang"
           export HOST_CXX="$MOZBUILD/clang/bin/clang++"
           EOF
+          fi
           # macOS cross-compile needs SDK path
           if [ "${{ matrix.target }}" = "macos" ]; then
             echo "ac_add_options --with-macos-sdk=$MOZBUILD/MacOSX14.4.sdk" >> $SRC/mozconfig
           fi
-          # Windows cross-compile needs WINSYSROOT for MSVC headers/libs
+          # Windows: set WINSYSROOT so bootstrap finds MSVC without downloading
           if [ "${{ matrix.target }}" = "windows" ]; then
             echo "export WINSYSROOT=\"$MOZBUILD/vs\"" >> $SRC/mozconfig
           fi
