@@ -28,14 +28,14 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - target: linux
-            arch: x86_64
-            moz_target: x86_64-pc-linux-gnu
-            zip_name_suffix: lin.x86_64
           - target: windows
             arch: x86_64
             moz_target: x86_64-pc-mingw32
             zip_name_suffix: win.x86_64
+          - target: linux
+            arch: x86_64
+            moz_target: x86_64-pc-linux-gnu
+            zip_name_suffix: lin.x86_64
           - target: macos
             arch: arm64
             moz_target: aarch64-apple-darwin
@@ -106,7 +106,7 @@ jobs:
           MOZBUILD=/home/ubuntu/.mozbuild
           # Replace --enable-bootstrap with --disable-bootstrap
           sed -i 's/--enable-bootstrap/--disable-bootstrap/' $SRC/mozconfig
-          # Add compiler paths and macOS SDK for cross-compile
+          # Add compiler paths
           cat >> $SRC/mozconfig << EOF
 
           # CI: use pre-installed toolchain
@@ -119,6 +119,10 @@ jobs:
           # macOS cross-compile needs SDK path
           if [ "${{ matrix.target }}" = "macos" ]; then
             echo "ac_add_options --with-macos-sdk=$MOZBUILD/MacOSX14.4.sdk" >> $SRC/mozconfig
+          fi
+          # Windows cross-compile needs WINSYSROOT for MSVC headers/libs
+          if [ "${{ matrix.target }}" = "windows" ]; then
+            echo "export WINSYSROOT=\"$MOZBUILD/vs\"" >> $SRC/mozconfig
           fi
           echo "=== Final mozconfig ==="
           cat $SRC/mozconfig
