@@ -1,0 +1,199 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Upload to latest release as asset'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  FF_VERSION: '135.0.1'
+  CF_RELEASE: 'beta.24'
+
+concurrency:
+  group: build-windows
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 360
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check environment
+        shell: pwsh
+        run: |
+          Write-Host "=== System Info ==="
+          systeminfo | Select-String "OS Name","OS Version","Total Physical Memory"
+          Write-Host ""
+          Write-Host "=== Disk Space ==="
+          Get-PSDrive -PSProvider FileSystem | Format-Table Name, @{n='Free(GB)';e={[math]::Round($_.Free/1GB,1)}}, @{n='Used(GB)';e={[math]::Round($_.Used/1GB,1)}}
+          Write-Host ""
+          Write-Host "=== Visual Studio ==="
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vsWhere) {
+            & $vsWhere -latest -property installationPath
+            & $vsWhere -latest -property catalog_productDisplayVersion
+          } else {
+            Write-Host "vswhere not found"
+          }
+          Write-Host ""
+          Write-Host "=== Python ==="
+          python --version 2>$null || python3 --version 2>$null || Write-Host "Python not found"
+          Write-Host ""
+          Write-Host "=== Rust ==="
+          rustc --version 2>$null || Write-Host "Rust not found"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Rust
+        shell: pwsh
+        run: |
+          if (-not (Get-Command rustc -ErrorAction SilentlyContinue)) {
+            Invoke-WebRequest -Uri https://win.rustup.rs/x86_64 -OutFile rustup-init.exe
+            .\rustup-init.exe -y --default-toolchain stable
+            Remove-Item rustup-init.exe
+          }
+          rustup target add x86_64-pc-windows-msvc
+          rustup target add i686-pc-windows-msvc
+
+      - name: Cache Firefox source
+        id: cache-ff-source
+        uses: actions/cache@v4
+        with:
+          path: firefox-${{ env.FF_VERSION }}.source.tar.xz
+          key: firefox-source-${{ env.FF_VERSION }}
+
+      - name: Download Firefox source
+        if: steps.cache-ff-source.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $url = "https://archive.mozilla.org/pub/firefox/releases/${{ env.FF_VERSION }}/source/firefox-${{ env.FF_VERSION }}.source.tar.xz"
+          Write-Host "Downloading $url ..."
+          Invoke-WebRequest -Uri $url -OutFile "firefox-${{ env.FF_VERSION }}.source.tar.xz" -MaximumRetryCount 3
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          # MozillaBuild provides the Unix-like environment needed for mach
+          if (-not (Test-Path "C:\mozilla-build")) {
+            $mbUrl = "https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe"
+            Invoke-WebRequest -Uri $mbUrl -OutFile MozillaBuildSetup.exe
+            Start-Process -Wait -FilePath .\MozillaBuildSetup.exe -ArgumentList "/S"
+            Remove-Item MozillaBuildSetup.exe
+          }
+          Write-Host "MozillaBuild installed at C:\mozilla-build"
+
+      - name: Fix config.patch newline
+        run: echo "" >> patches/config.patch
+
+      - name: Setup source
+        shell: C:\mozilla-build\start-shell.bat {0}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          make setup-minimal
+          cd camoufox-$FF_VERSION-$CF_RELEASE
+          git init -b main
+          git add -f _READY moz.build browser/config/version.txt 2>/dev/null || true
+          git commit -m "init" --allow-empty
+          cd ..
+          BUILD_TARGET=windows,x86_64 python3 scripts/patch.py $FF_VERSION $CF_RELEASE
+
+      - name: Bootstrap (mach)
+        shell: C:\mozilla-build\start-shell.bat {0}
+        run: |
+          cd "$GITHUB_WORKSPACE/camoufox-$FF_VERSION-$CF_RELEASE"
+          MOZBUILD_STATE_PATH="$HOME/.mozbuild" ./mach --no-interactive bootstrap --application-choice=browser
+
+      - name: Inject PropertyTracer
+        run: |
+          SRC=camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+          python3 scripts/inject-trace-to-source.py $SRC
+          grep -q "camoucfg" $SRC/moz.build || echo 'DIRS += ["camoucfg"]' >> $SRC/moz.build
+
+      - name: Build
+        shell: C:\mozilla-build\start-shell.bat {0}
+        run: |
+          cd "$GITHUB_WORKSPACE/camoufox-$FF_VERSION-$CF_RELEASE"
+          ./mach build
+
+      - name: Stage package
+        shell: C:\mozilla-build\start-shell.bat {0}
+        run: |
+          cd "$GITHUB_WORKSPACE/camoufox-$FF_VERSION-$CF_RELEASE/obj-x86_64-pc-mingw32"
+          make -C browser/installer stage-package
+
+      - name: Create zip
+        shell: pwsh
+        run: |
+          $srcBase = "camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}/obj-x86_64-pc-mingw32/dist/camoufox"
+          $outZip = "camoufox-reverse-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}-win.x86_64.zip"
+          $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "cfx-pkg-$(Get-Random)")
+
+          # Copy browser files
+          Copy-Item -Path "$srcBase\*" -Destination $tmp -Recurse -Force
+
+          # Copy settings
+          foreach ($f in @("settings/chrome.css", "settings/properties.json", "settings/camoucfg.jvv")) {
+            if (Test-Path $f) { Copy-Item $f -Destination $tmp }
+          }
+
+          # Copy fonts (macOS + Linux fonts for Windows build)
+          $fontsDir = Join-Path $tmp "fonts"
+          New-Item -ItemType Directory -Path $fontsDir -Force | Out-Null
+          foreach ($platform in @("macos", "linux")) {
+            $fontSrc = "bundle/fonts/$platform"
+            if (Test-Path $fontSrc) {
+              Get-ChildItem -Path $fontSrc -Recurse -File | ForEach-Object {
+                Copy-Item $_.FullName -Destination $fontsDir
+              }
+            }
+          }
+
+          # Create zip
+          Compress-Archive -Path "$tmp\*" -DestinationPath $outZip -CompressionLevel Optimal
+          Write-Host "Created: $outZip ($('{0:N1} MB' -f ((Get-Item $outZip).Length / 1MB)))"
+
+          # Cleanup
+          Remove-Item -Recurse -Force $tmp
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: camoufox-reverse-win.x86_64
+          path: camoufox-reverse-*.zip
+
+      - name: Upload to release
+        if: inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
+          files: camoufox-reverse-*.zip
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: false
+
+      - name: Cleanup build directory
+        if: always()
+        shell: pwsh
+        run: |
+          $buildDir = "camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}"
+          if (Test-Path $buildDir) {
+            Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
+          }
