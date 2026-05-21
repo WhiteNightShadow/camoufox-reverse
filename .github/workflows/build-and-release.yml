@@ -40,6 +40,10 @@ jobs:
             arch: x86_64
             moz_target: x86_64-apple-darwin
             zip_name_suffix: mac.x86_64
+          - target: windows
+            arch: x86_64
+            moz_target: x86_64-pc-mingw32
+            zip_name_suffix: win.x86_64
 
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 240
@@ -91,10 +95,14 @@ jobs:
         run: |
           # Use setup-minimal (skip full git init which is very slow on 600MB+ source)
           make setup-minimal
-          # Minimal git init needed for --enable-bootstrap to find toolchain artifacts
+          # Minimal git init (Windows build's create_rc.py needs git log on milestone.txt
+          # to compute version timestamp — failing strptime if untracked)
           cd camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
           git init -b main
-          git add -f _READY moz.build browser/config/version.txt 2>/dev/null || true
+          git config user.email "build@local"
+          git config user.name "build"
+          git add -f moz.build config/milestone.txt \
+                      browser/config/version.txt browser/config/version_display.txt
           git commit -m "init" --allow-empty
           cd ..
           # Then run patch.py to apply patches and generate mozconfig
@@ -102,39 +110,67 @@ jobs:
         env:
           BUILD_TARGET: ${{ matrix.target }},${{ matrix.arch }}
 
+      - name: Prepare Windows cross-compile prerequisites
+        if: matrix.target == 'windows'
+        run: |
+          # wine64 needed for mach to run MSVC mt.exe during build
+          which wine64 || sudo apt-get install -y wine64
+          # windows-rs crate source (mach requires it; cargo-download via USTC mirror is broken,
+          # use aria2c direct from crates.io — single retry sufficient as crate is 9.3 MB)
+          WINRS_DIR="$HOME/winrs/windows-0.58.0"
+          if [ ! -f "$WINRS_DIR/Cargo.toml" ]; then
+            mkdir -p "$HOME/winrs"
+            cd "$HOME/winrs"
+            aria2c -x16 -s16 -k1M --max-tries=5 --retry-wait=3 --timeout=60 \
+              -o windows-0.58.0.crate \
+              "https://crates.io/api/v1/crates/windows/0.58.0/download"
+            mkdir -p windows-0.58.0
+            tar xzf windows-0.58.0.crate --strip-components=1 -C windows-0.58.0
+          fi
+          ls "$WINRS_DIR/Cargo.toml"
+
       - name: Patch mozconfig (toolchain paths)
         run: |
           SRC=camoufox-${{ env.FF_VERSION }}-${{ env.CF_RELEASE }}
           MOZBUILD=/home/ubuntu/.mozbuild
-          # Windows keeps --enable-bootstrap (needs clang-cl auto-config + VFS overlay)
-          # Other platforms use --disable-bootstrap + explicit compiler paths
-          if [ "${{ matrix.target }}" != "windows" ]; then
-            sed -i 's/--enable-bootstrap/--disable-bootstrap/' $SRC/mozconfig
-          fi
-          # Add compiler paths
+          # All platforms: --disable-bootstrap (the Mozilla CI task index for FF 135.0.1
+          # has expired upstream — bootstrap would 404 trying to refresh clang artifacts)
+          sed -i 's/^ac_add_options --enable-bootstrap$//' $SRC/mozconfig
+
+          # Common: shared toolchain options
           cat >> $SRC/mozconfig << MOZEOF
 
           # CI: use pre-installed toolchain
+          ac_add_options --disable-bootstrap
           ac_add_options --without-wasm-sandboxed-libraries
-          export CC="$MOZBUILD/clang/bin/clang"
-          export CXX="$MOZBUILD/clang/bin/clang++"
           export HOST_CC="$MOZBUILD/clang/bin/clang"
           export HOST_CXX="$MOZBUILD/clang/bin/clang++"
           MOZEOF
+
+          # Per-target compiler selection
+          if [ "${{ matrix.target }}" = "windows" ]; then
+            # Windows cross-compile: clang-cl (MSVC mode) reads MSVC SDK via VFS overlay
+            # under WINSYSROOT. Do NOT set INCLUDE/LIB manually — mach's VFS overlay is
+            # case-insensitive and the only thing that makes Linux→Windows headers work.
+            cat >> $SRC/mozconfig << MOZEOF
+          export CC="$MOZBUILD/clang/bin/clang-cl"
+          export CXX="$MOZBUILD/clang/bin/clang-cl"
+          export WINSYSROOT="$MOZBUILD/vs"
+          export MOZ_WINDOWS_RS_DIR="$HOME/winrs/windows-0.58.0"
+          MOZEOF
+          else
+            # Linux / macOS: regular clang
+            cat >> $SRC/mozconfig << MOZEOF
+          export CC="$MOZBUILD/clang/bin/clang"
+          export CXX="$MOZBUILD/clang/bin/clang++"
+          MOZEOF
+          fi
+
           # macOS cross-compile needs SDK path
           if [ "${{ matrix.target }}" = "macos" ]; then
             echo "ac_add_options --with-macos-sdk=$MOZBUILD/MacOSX14.4.sdk" >> $SRC/mozconfig
           fi
-          # Windows cross-compile needs WINSYSROOT + INCLUDE/LIB
-          if [ "${{ matrix.target }}" = "windows" ]; then
-            MSVC="$MOZBUILD/vs/VC/Tools/MSVC/14.39.33519"
-            WINSDK="$MOZBUILD/vs/Windows Kits/10"
-            cat >> $SRC/mozconfig << MOZEOF
-          export WINSYSROOT="$MOZBUILD/vs"
-          export INCLUDE="$MSVC/include;$WINSDK/Include/10.0.22621.0/ucrt;$WINSDK/Include/10.0.22621.0/shared;$WINSDK/Include/10.0.22621.0/um;$WINSDK/Include/10.0.22621.0/winrt"
-          export LIB="$MSVC/lib/x64;$WINSDK/Lib/10.0.22621.0/ucrt/x64;$WINSDK/Lib/10.0.22621.0/um/x64"
-          MOZEOF
-          fi
+
           echo "=== Final mozconfig ==="
           cat $SRC/mozconfig
 

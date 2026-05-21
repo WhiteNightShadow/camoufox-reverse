@@ -6,7 +6,24 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
+
+#ifdef _WIN32
+#  include <io.h>
+#  include <process.h>
+#  include <direct.h>
+typedef int pid_t;
+#  define open   _open
+#  define close  _close
+#  define write  _write
+#  define unlink _unlink
+#  define fsync  _commit
+#  define getpid _getpid
+#  ifndef O_CLOEXEC
+#    define O_CLOEXEC 0   // MSVC: handles are CLOEXEC-by-default unless _O_NOINHERIT cleared
+#  endif
+#else
+#  include <unistd.h>
+#endif
 
 namespace camou {
 

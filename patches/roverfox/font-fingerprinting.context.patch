@@ -821,15 +821,16 @@ index a8fac45e67..d59815f2d5 100644
  #include "mozilla/Sprintf.h"
  #include "mozilla/StaticPresData.h"
  #include "mozilla/UniquePtr.h"
-@@ -34,6 +35,7 @@
+@@ -34,6 +35,8 @@
  #include "nsUnicodeProperties.h"
  #include "SharedFontList-impl.h"
  #include "TextDrawTarget.h"
 +#include "mozilla/BasePrincipal.h"
++#include "mozilla/dom/Document.h"
  
  #ifdef XP_WIN
  #  include "gfxWindowsPlatform.h"
-@@ -145,25 +147,26 @@ void* gfxTextRun::AllocateStorageForTextRun(size_t aSize, uint32_t aLength) {
+@@ -145,25 +148,26 @@ void* gfxTextRun::AllocateStorageForTextRun(size_t aSize, uint32_t aLength) {
  already_AddRefed<gfxTextRun> gfxTextRun::Create(
      const gfxTextRunFactory::Parameters* aParams, uint32_t aLength,
      gfxFontGroup* aFontGroup, gfx::ShapedTextFlags aFlags,

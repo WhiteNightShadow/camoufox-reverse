@@ -11,6 +11,7 @@
 - **75 个 DOM getter 覆盖**：Navigator(17) / Screen(3) / Window(13) / Canvas2D(1) / HTMLCanvas(3) / WebGL(4) / AudioContext(2) / Plugins(2) / MimeTypes(2) / Performance(1) / Document.cookie(2) / History(1) / Battery(4) / WorkerNavigator(5) / WebRTC(3) / MediaDevices(2) / LocalStorage(2) / SessionStorage(2) / Fonts(2) / OffscreenCanvas(2) / Geolocation(2)
 - **多进程支持**：主进程 + content 进程的属性访问全部捕获
 - **按需开关**：不启用 trace 时零开销（单次 atomic load ~1ns）
+- **全平台二进制**：macOS arm64 / macOS x86_64 / Linux x86_64 / **Windows x86_64**（macOS 与 Windows 均通过 Ubuntu 编译服务器交叉编译，无需对应 OS）
 
 ## 与官方 Camoufox 的关系
 
