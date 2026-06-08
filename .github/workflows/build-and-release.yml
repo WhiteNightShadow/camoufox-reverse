@@ -224,6 +224,15 @@ jobs:
                       for root, dirs, files in os.walk(fd):
                           for ff in files:
                               shutil.copy2(os.path.join(root, ff), fonts_dst)
+              # version.json sits at zip root (siblings to Camoufox.app/camoufox.exe/camoufox-bin),
+              # which is what camoufox.pkgman.Version.from_path() reads via orjson.
+              # IMPORTANT: must be plain UTF-8 without BOM — orjson rejects any BOM.
+              import json as _json
+              with open(os.path.join(tmp, "version.json"), "wb") as _vf:
+                  _vf.write(_json.dumps({
+                      "version": os.environ["FF_VERSION"],
+                      "release": os.environ["CF_RELEASE"],
+                  }).encode("utf-8"))
               subprocess.run(["zip", "-r", "-9", "-y", os.path.abspath(out_zip), "."],
                            cwd=tmp, check=True, capture_output=True)
           print(f"Created: {out_zip}")

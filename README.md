@@ -159,8 +159,15 @@ Copy-Item -Recurse "$env:LOCALAPPDATA\camoufox\camoufox\Cache" "$env:LOCALAPPDAT
 Remove-Item -Recurse "$env:LOCALAPPDATA\camoufox\camoufox\Cache\*"
 Expand-Archive camoufox-*-win.x86_64.zip -DestinationPath "$env:LOCALAPPDATA\camoufox\camoufox\Cache"
 
-# 创建版本文件
-'{"version": "135.0.1", "release": "beta.24"}' | Out-File "$env:LOCALAPPDATA\camoufox\camoufox\Cache\version.json"
+# version.json 现在已经随 zip 一起发布，无需手动创建。
+# 如果你下载的是 v135.0.1-beta.25 之前的旧 zip，可能需要补一个无 BOM 的 version.json：
+# （PowerShell 的 Out-File 默认会写 UTF-16 LE BOM 或 UTF-8 BOM，camoufox 用的 orjson 不容忍 BOM，
+#  必须用下面这个 .NET API 显式写无 BOM UTF-8）
+[IO.File]::WriteAllText(
+    "$env:LOCALAPPDATA\camoufox\camoufox\Cache\version.json",
+    '{"version":"135.0.1","release":"beta.24"}',
+    [Text.UTF8Encoding]::new($false)
+)
 ```
 
 ### 切回官方版本
