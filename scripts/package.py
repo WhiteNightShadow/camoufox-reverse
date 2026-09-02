@@ -2,6 +2,7 @@
 
 import argparse
 import glob
+import json
 import os
 import shutil
 import sys
@@ -13,7 +14,9 @@ from _mixin import find_src_dir, get_moz_target, list_files, run, temp_cd
 UNNEEDED_PATHS = {'uninstall', 'pingsender.exe', 'pingsender', 'vaapitest', 'glxtest'}
 
 
-def add_includes_to_package(package_file, includes, fonts, new_file, target):
+def add_includes_to_package(
+    package_file, includes, fonts, new_file, target, version, release
+):
     with tempfile.TemporaryDirectory() as temp_dir:
         # Extract package
         run(join(['7z', 'x', package_file, f'-o{temp_dir}']), exit_on_fail=False)
@@ -28,6 +31,8 @@ def add_includes_to_package(package_file, includes, fonts, new_file, target):
                 fonts=fonts,
                 new_file=new_file,
                 target=target,
+                version=version,
+                release=release,
             )
 
         if target == 'macos':
@@ -78,6 +83,23 @@ def add_includes_to_package(package_file, includes, fonts, new_file, target):
                 )
             else:
                 shutil.copy2(include, target_dir)
+                if (
+                    target_dir != temp_dir
+                    and os.path.basename(include)
+                    == 'camoufox-reverse-capabilities.json'
+                ):
+                    shutil.copy2(include, temp_dir)
+
+        # Keep the archive self-describing for both the legacy flat cache
+        # (Camoufox Python 0.4.x expects `release`) and the 0.5.x versioned
+        # cache (`Version.from_path` transparently maps `release` to `build`).
+        with open(os.path.join(temp_dir, 'version.json'), 'wb') as version_file:
+            version_file.write(
+                json.dumps(
+                    {'version': version, 'release': release},
+                    separators=(',', ':'),
+                ).encode('utf-8')
+            )
 
         # Add the font folders under fonts/
         fonts_dir = os.path.join(target_dir, 'fonts')
@@ -173,6 +195,8 @@ def main():
         fonts=args.fonts,
         new_file=new_name,
         target=args.os,
+        version=args.version,
+        release=args.release,
     )
 
     print(f"Packaging complete for {args.os}")

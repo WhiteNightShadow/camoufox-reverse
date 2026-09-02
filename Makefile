@@ -12,7 +12,7 @@ pacman := python python-pip p7zip go msitools wget aria2 sqlite
         build-launcher check-arch revert edits run bootstrap mozbootstrap dir \
         package-linux package-macos package-windows vcredist_arch patch unpatch \
         workspace check-arg edit-cfg ff-dbg tests update-ubo-assets generate-assets-car \
-        setup-macos-sdk
+        setup-macos-sdk test-trace-injector
 
 help:
 	@echo "Available targets:"
@@ -86,7 +86,16 @@ dir:
 		make setup; \
 	fi
 	python3 scripts/patch.py $(version) $(release)
+	python3 scripts/inject-trace-to-source.py $(cf_source_dir) \
+		--apply --strict \
+		--expect-version $(version)-$(release) \
+		--expect-hooks 75
 	touch $(cf_source_dir)/_READY
+
+test-trace-injector:
+	python3 -m unittest -v \
+		tests.test_inject_trace_to_source \
+		tests.test_install_camoufox_reverse
 
 set-target:
 	python3 scripts/patch.py $(version) $(release) --mozconfig-only
@@ -160,6 +169,7 @@ package-linux:
 			settings/chrome.css \
 			settings/camoucfg.jvv \
 			settings/properties.json \
+			settings/camoufox-reverse-capabilities.json \
 			bundle/fontconfig \
 		--version $(version) \
 		--release $(release) \
@@ -172,6 +182,7 @@ package-macos:
 			settings/chrome.css \
 			settings/camoucfg.jvv \
 			settings/properties.json \
+			settings/camoufox-reverse-capabilities.json \
 		--version $(version) \
 		--release $(release) \
 		--arch $(arch) \
@@ -183,6 +194,7 @@ package-windows:
 			settings/chrome.css \
 			settings/camoucfg.jvv \
 			settings/properties.json \
+			settings/camoufox-reverse-capabilities.json \
 			~/.mozbuild/vs/VC/Redist/MSVC/*/$(vcredist_arch)/Microsoft.VC*.CRT/*.dll \
 		--version $(version) \
 		--release $(release) \

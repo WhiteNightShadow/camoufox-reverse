@@ -21,6 +21,53 @@
 
 ---
 
+## Camoufox Reverse — PropertyTracer build
+
+This fork keeps upstream Camoufox unchanged by default and publishes a separate,
+opt-in browser build with an engine-level `PropertyTracer`. The first Firefox
+152 build is based on upstream `v152.0.4-beta.30` and keeps the MCP JSONL/control
+protocol used by the previous Firefox 135 build.
+
+- Normal Camoufox users should continue using the upstream `official/stable`
+  channel.
+- The reverse build is required only for
+  `camoufox-reverse-mcp.trace_property_access`.
+- Existing Firefox 135 installations are not migrated, overwritten, or selected
+  automatically.
+
+### Side-by-side installation with Camoufox Python 0.5+
+
+1. Download the archive for your platform from this repository's
+   [Releases](https://github.com/WhiteNightShadow/camoufox-reverse/releases).
+2. Download `install-camoufox-reverse.py` from the same release and install the
+   checked archive without changing active config:
+
+```bash
+python3 install-camoufox-reverse.py camoufox-152.0.4-beta.30-<platform>.zip \
+  --sha256 <value-from-SHA256SUMS>
+```
+
+The installer refuses legacy flat-cache migration and places the build under
+`browsers/whitenightshadow/152.0.4-beta.30-reverse.1/`.
+3. Keep the official browser active. Select the reverse build only for one MCP
+   launch:
+
+```text
+launch_browser(
+  browser_version="whitenightshadow/152.0.4-beta.30-reverse.1",
+  enable_trace=True
+)
+```
+
+Run `check_environment()` to list the exact installed selector. Camoufox Python
+0.4.x keeps its existing flat-cache behavior; omit `browser_version` to preserve
+that path. Do not clear or overwrite a Camoufox 0.5 cache root.
+
+> 中文说明：152 定制版与官方版并存，默认仍走官方/当前 active 版本；只有显式传
+> `browser_version` 才会启动 PropertyTracer 版本，因此不会影响现有 135 用户。
+
+---
+
 # Sponsors
 
 <details open>

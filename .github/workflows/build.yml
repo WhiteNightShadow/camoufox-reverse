@@ -22,6 +22,12 @@ jobs:
             arch: i686
           - target: linux
             arch: i686
+          # Reverse r1 ships only platforms covered by the existing project
+          # support matrix and local/runtime smoke gates.
+          - target: linux
+            arch: arm64
+          - target: windows
+            arch: i686
 
     steps:
       - name: Maximize build space
@@ -56,6 +62,9 @@ jobs:
       - uses: actions/checkout@v2
         with:
           fetch-depth: 1
+
+      - name: Test reverse build tooling
+        run: make test-trace-injector
 
       - name: Set up Go
         uses: actions/setup-go@v2
@@ -134,13 +143,49 @@ jobs:
         with:
           path: artifacts
 
+      - name: Build integrity manifest
+        shell: bash
+        run: |
+          find artifacts -type f -name 'camoufox-*.zip' -exec cp '{}' . \;
+          sha256sum camoufox-*.zip > SHA256SUMS
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          assets = []
+          for path in sorted(Path('.').glob('camoufox-*.zip')):
+              with path.open('rb') as asset_file:
+                  digest = hashlib.file_digest(asset_file, 'sha256').hexdigest()
+              assets.append({
+                  'name': path.name,
+                  'size': path.stat().st_size,
+                  'sha256': digest,
+              })
+          Path('BUILD-MANIFEST.json').write_text(json.dumps({
+              'schema': 1,
+              'upstream_tag': 'v152.0.4-beta.30',
+              'upstream_commit': '5d06ec1',
+              'reverse_release': 'reverse.1',
+              'property_trace_hooks': 75,
+              'assets': assets,
+          }, indent=2) + '\n', encoding='utf-8')
+          PY
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: artifacts/**/*
+          files: |
+            camoufox-*.zip
+            SHA256SUMS
+            BUILD-MANIFEST.json
+            scripts/install-camoufox-reverse.py
           generate_release_notes: true
-          draft: true
+          body_path: docs/releases/v152.0.4-beta.30-reverse.1.md
+          draft: false
           prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
