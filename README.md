@@ -52,7 +52,7 @@ The first command asks for confirmation because beta.30 is an upstream
 prerelease. The MCP never changes this setting itself.
 
 1. Download the archive for your platform from the exact
-   [reverse.2 release](https://github.com/WhiteNightShadow/camoufox-reverse/releases/tag/v152.0.4-beta.30-reverse.2).
+   [reverse.3 release](https://github.com/WhiteNightShadow/camoufox-reverse/releases/tag/v152.0.4-beta.30-reverse.3).
 2. Download `install-camoufox-reverse.py` from that release and install the
    checked archive without changing active config:
 
@@ -62,20 +62,24 @@ python3 install-camoufox-reverse.py camoufox-152.0.4-beta.30-<platform>.zip \
 ```
 
 The installer refuses legacy flat-cache migration and places the build under
-`browsers/whitenightshadow/152.0.4-beta.30-reverse.2/`.
+`browsers/whitenightshadow/152.0.4-beta.30-reverse.3/`.
+Use the provided installer rather than a bare archive extraction: cross-built
+zip files do not reliably preserve executable mode bits, while the installer
+normalizes them before the browser is selected.
 3. Keep the official browser active. Select the reverse build only for one MCP
    launch:
 
 ```text
 launch_browser(
-  browser_version="whitenightshadow/152.0.4-beta.30-reverse.2",
+  browser_version="whitenightshadow/152.0.4-beta.30-reverse.3",
   enable_trace=True
 )
 ```
 
 Run `check_environment()` to list the exact installed selector. Camoufox Python
 0.4.x keeps its existing flat-cache behavior; omit `browser_version` to preserve
-that path. Do not clear or overwrite a Camoufox 0.5 cache root.
+that path. Do not clear or overwrite a Camoufox 0.5 cache root. The previous
+`reverse.2` build remains supported; no existing installation must migrate.
 
 > 中文说明：152 定制版与官方版并存，默认仍走官方/当前 active 版本；只有显式传
 > `browser_version` 才会启动 PropertyTracer 版本，因此不会影响现有 135 用户。
@@ -631,6 +635,19 @@ python3 multibuild.py --target linux windows macos --arch x86_64 arm64 i686
 ```
 
 For new builds, `i686` is supported only for Windows. Unsupported target/architecture combinations are skipped.
+
+On a shared build host, give every concurrently running checkout a different
+absolute Mozilla state directory. This prevents one bootstrap from replacing
+the Clang toolchain or sysroot while another Firefox build is using it:
+
+```bash
+export MOZBUILD_STATE_PATH=/srv/camoufox-builds/job-123/mozbuild
+make bootstrap
+python3 multibuild.py --target linux windows macos --arch x86_64 arm64
+```
+
+If the variable is omitted, the existing `~/.mozbuild` default is preserved.
+Do not point concurrent builds at the same writable state directory.
 
 <details>
 <summary>

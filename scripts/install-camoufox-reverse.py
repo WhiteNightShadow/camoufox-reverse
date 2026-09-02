@@ -22,7 +22,7 @@ import re
 
 CAPABILITIES_FILE = "camoufox-reverse-capabilities.json"
 EXPECTED_DISTRIBUTION = "WhiteNightShadow/camoufox-reverse"
-EXPECTED_REVERSE_RELEASE = "reverse.2"
+EXPECTED_REVERSE_RELEASE = "reverse.3"
 MAX_MEMBERS = 50_000
 MAX_TOTAL_SIZE = 4 * 1024 * 1024 * 1024
 MAX_SINGLE_FILE_SIZE = 2 * 1024 * 1024 * 1024

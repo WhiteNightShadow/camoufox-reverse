@@ -1,4 +1,8 @@
 include upstream.sh
+
+ifeq ($(strip $(MOZBUILD_STATE_PATH)),)
+MOZBUILD_STATE_PATH := $(HOME)/.mozbuild
+endif
 export
 
 cf_source_dir := camoufox-$(version)-$(release)
@@ -95,23 +99,24 @@ dir:
 test-trace-injector:
 	python3 -m unittest -v \
 		tests.test_inject_trace_to_source \
-		tests.test_install_camoufox_reverse
+		tests.test_install_camoufox_reverse \
+		tests.test_build_state_path
 
 set-target:
 	python3 scripts/patch.py $(version) $(release) --mozconfig-only
 
 mozbootstrap:
-	cd $(cf_source_dir) && MOZBUILD_STATE_PATH=$$HOME/.mozbuild ./mach --no-interactive bootstrap --application-choice=browser
+	cd $(cf_source_dir) && MOZBUILD_STATE_PATH="$(MOZBUILD_STATE_PATH)" ./mach --no-interactive bootstrap --application-choice=browser
 
 setup-macos-sdk:
-	@if [ "$$(uname -s)" != "Darwin" ] && [ ! -f "$$HOME/.mozbuild/MacOSX26.5.sdk/SDKSettings.plist" ]; then \
+	@if [ "$$(uname -s)" != "Darwin" ] && [ ! -f "$(MOZBUILD_STATE_PATH)/MacOSX26.5.sdk/SDKSettings.plist" ]; then \
 		echo "Downloading macOS 26.5 SDK..."; \
 		cd $(cf_source_dir) && env -u MOZ_AUTOMATION ./mach --no-interactive python --virtualenv build \
 			taskcluster/scripts/misc/unpack-sdk.py \
 			https://swcdn.apple.com/content/downloads/09/08/047-91568-A_Y1CFZWQCD4/4xekpyz43i26dbp4enxfro8eb1q7wiujh5/CLTools_macOSNMOS_SDK.pkg \
 			5db8b5a06a489a7d3ec587ebb7e01be55163128029923fc24edcad47faecd67830193c0d91e2643ee0e92f2ccca37adf20e4c42cf8de5784666f8663638b5cc5 \
 			Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
-			"$$HOME/.mozbuild/MacOSX26.5.sdk"; \
+			"$(MOZBUILD_STATE_PATH)/MacOSX26.5.sdk"; \
 	fi
 
 bootstrap: dir
@@ -195,7 +200,7 @@ package-windows:
 			settings/camoucfg.jvv \
 			settings/properties.json \
 			settings/camoufox-reverse-capabilities.json \
-			~/.mozbuild/vs/VC/Redist/MSVC/*/$(vcredist_arch)/Microsoft.VC*.CRT/*.dll \
+			$(MOZBUILD_STATE_PATH)/vs/VC/Redist/MSVC/*/$(vcredist_arch)/Microsoft.VC*.CRT/*.dll \
 		--version $(version) \
 		--release $(release) \
 		--arch $(arch) \

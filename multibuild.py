@@ -30,12 +30,20 @@ AVAILABLE_TARGETS = ["linux", "windows", "macos"]
 AVAILABLE_ARCHS = ["x86_64", "arm64", "i686"]
 
 
+def get_mozbuild_state_path() -> Path:
+    """Return Mozilla's configured persistent build-state directory."""
+    configured = os.environ.get('MOZBUILD_STATE_PATH')
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / '.mozbuild'
+
+
 def setup_linux_sysroots():
     """
     Set up symlinks required for Linux cross-compilation.
     The sysroots may be missing the libsqlite3.so symlink needed for linking.
     """
-    mozbuild = Path.home() / '.mozbuild'
+    mozbuild = get_mozbuild_state_path()
     sysroots = [
         ('sysroot-aarch64-linux-gnu', 'aarch64-linux-gnu'),
         ('sysroot-x86_64-linux-gnu', 'x86_64-linux-gnu'),

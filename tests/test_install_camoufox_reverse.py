@@ -19,7 +19,7 @@ sys.modules[SPEC.name] = installer
 SPEC.loader.exec_module(installer)
 
 
-def _archive(path: Path, *, unsafe: bool = False, reverse_release: str = "reverse.2") -> Path:
+def _archive(path: Path, *, unsafe: bool = False, reverse_release: str = "reverse.3") -> Path:
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
             "version.json",
@@ -76,7 +76,7 @@ class InstallerTests(unittest.TestCase):
 
         self.assertEqual(
             result["selector"],
-            "whitenightshadow/152.0.4-beta.30-reverse.2",
+            "whitenightshadow/152.0.4-beta.30-reverse.3",
         )
         self.assertFalse(result["active_config_changed"])
         self.assertTrue((Path(result["path"]) / "camoufox-bin").is_file())

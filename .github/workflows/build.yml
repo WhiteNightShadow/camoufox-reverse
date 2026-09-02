@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v152.0.4-beta.30-reverse.2"
+      - "v152.0.4-beta.30-reverse.3"
 
 jobs:
   build:
@@ -22,7 +22,7 @@ jobs:
             arch: i686
           - target: linux
             arch: i686
-          # Reverse r1 ships only platforms covered by the existing project
+          # The reverse release ships only platforms covered by the existing project
           # support matrix and local/runtime smoke gates.
           - target: linux
             arch: arm64
@@ -104,6 +104,10 @@ jobs:
           make fetch
 
       - name: Setup and bootstrap
+        env:
+          # Each runner gets an isolated Mozilla toolchain/sysroot state. The
+          # local default remains ~/.mozbuild when this variable is omitted.
+          MOZBUILD_STATE_PATH: ${{ runner.temp }}/camoufox-mozbuild
         run: |
           make setup-minimal
           make mozbootstrap
@@ -120,6 +124,7 @@ jobs:
 
       - name: Build
         env:
+          MOZBUILD_STATE_PATH: ${{ runner.temp }}/camoufox-mozbuild
           # Cap Rust parallelism to lower peak memory (avoids OOM/SIGTERM).
           # Tune to taste: higher = faster but more RAM.
           CARGO_BUILD_JOBS: "1"
@@ -197,7 +202,7 @@ jobs:
                   'schema': 1,
                   'distribution': 'WhiteNightShadow/camoufox-reverse',
                   'upstream_version': '152.0.4-beta.30',
-                  'reverse_release': 'reverse.2',
+                  'reverse_release': 'reverse.3',
                   'property_trace': True,
                   'property_trace_protocol': 1,
                   'property_trace_hooks': 75,
@@ -217,7 +222,7 @@ jobs:
               'schema': 1,
               'upstream_tag': 'v152.0.4-beta.30',
               'upstream_commit': '5d06ec1',
-              'reverse_release': 'reverse.2',
+              'reverse_release': 'reverse.3',
               'reverse_commit': '${{ github.sha }}',
               'property_trace_hooks': 75,
               'assets': assets,
@@ -234,7 +239,7 @@ jobs:
             BUILD-MANIFEST.json
             scripts/install-camoufox-reverse.py
           generate_release_notes: true
-          body_path: docs/releases/v152.0.4-beta.30-reverse.2.md
+          body_path: docs/releases/v152.0.4-beta.30-reverse.3.md
           draft: false
           prerelease: true
           make_latest: false
