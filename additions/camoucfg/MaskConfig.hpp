@@ -5,6 +5,7 @@ Written by daijro.
 
 #pragma once
 #include "json.hpp"
+#include "PropertyTracer.hpp"
 #include <memory>
 #include <string>
 #include <tuple>
@@ -82,6 +83,27 @@ inline const nlohmann::json& GetJson() {
     }
 
     jsonConfig = nlohmann::json::parse(jsonString);
+
+    if (jsonConfig.contains("propertyTrace") &&
+        jsonConfig["propertyTrace"].is_object()) {
+      auto& pt = jsonConfig["propertyTrace"];
+      if (pt.value("enabled", false)) {
+        std::string baseDir = pt.value("logDir", "");
+        uint32_t maxEvents = pt.value("maxEventsPerSession", 100000u);
+        std::vector<std::string> objects;
+        if (pt.contains("objects") && pt["objects"].is_array()) {
+          for (const auto& obj : pt["objects"]) {
+            if (obj.is_string()) {
+              objects.push_back(obj.get<std::string>());
+            }
+          }
+        }
+        if (!baseDir.empty()) {
+          camou::PropertyTracer::Instance().Initialize(
+              baseDir, objects, maxEvents);
+        }
+      }
+    }
   });
 
   return jsonConfig;
