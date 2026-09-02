@@ -19,7 +19,7 @@ sys.modules[SPEC.name] = installer
 SPEC.loader.exec_module(installer)
 
 
-def _archive(path: Path, *, unsafe: bool = False) -> Path:
+def _archive(path: Path, *, unsafe: bool = False, reverse_release: str = "reverse.2") -> Path:
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
             "version.json",
@@ -29,9 +29,13 @@ def _archive(path: Path, *, unsafe: bool = False) -> Path:
             installer.CAPABILITIES_FILE,
             json.dumps(
                 {
+                    "schema": 1,
                     "distribution": "WhiteNightShadow/camoufox-reverse",
-                    "reverse_release": "reverse.1",
+                    "upstream_version": "152.0.4-beta.30",
+                    "reverse_release": reverse_release,
                     "property_trace": True,
+                    "property_trace_protocol": 1,
+                    "property_trace_hooks": 75,
                 }
             ),
         )
@@ -39,6 +43,12 @@ def _archive(path: Path, *, unsafe: bool = False) -> Path:
         if unsafe:
             archive.writestr("../escape", "bad")
     return path
+
+
+def _digest(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class InstallerTests(unittest.TestCase):
@@ -57,13 +67,16 @@ class InstallerTests(unittest.TestCase):
         config.write_bytes(b'{"active_version":"browsers/official/152.0.4-beta.30"}')
         before = config.read_bytes()
 
+        archive = _archive(
+            self.root / "camoufox-152.0.4-beta.30-lin.x86_64.zip"
+        )
         result = installer.install_archive(
-            _archive(self.root / "browser.zip"), cache_dir=cache
+            archive, cache_dir=cache, expected_sha256=_digest(archive)
         )
 
         self.assertEqual(
             result["selector"],
-            "whitenightshadow/152.0.4-beta.30-reverse.1",
+            "whitenightshadow/152.0.4-beta.30-reverse.2",
         )
         self.assertFalse(result["active_config_changed"])
         self.assertTrue((Path(result["path"]) / "camoufox-bin").is_file())
@@ -77,8 +90,11 @@ class InstallerTests(unittest.TestCase):
         before = version.read_bytes()
 
         with self.assertRaisesRegex(installer.InstallError, "legacy Camoufox 0.4"):
+            archive = _archive(
+                self.root / "camoufox-152.0.4-beta.30-lin.x86_64.zip"
+            )
             installer.install_archive(
-                _archive(self.root / "browser.zip"), cache_dir=cache
+                archive, cache_dir=cache, expected_sha256=_digest(archive)
             )
         self.assertEqual(version.read_bytes(), before)
         self.assertFalse((cache / "browsers").exists())
@@ -87,15 +103,34 @@ class InstallerTests(unittest.TestCase):
         cache = self.root / "cache"
         cache.mkdir()
         (cache / ".0.5_FLAG").touch()
-        archive = _archive(self.root / "unsafe.zip", unsafe=True)
+        archive = _archive(
+            self.root / "camoufox-152.0.4-beta.30-lin.x86_64.zip",
+            unsafe=True,
+        )
 
         with self.assertRaisesRegex(installer.InstallError, "unsafe archive path"):
-            installer.install_archive(archive, cache_dir=cache)
+            installer.install_archive(
+                archive, cache_dir=cache, expected_sha256=_digest(archive)
+            )
         with self.assertRaisesRegex(installer.InstallError, "SHA256 mismatch"):
             installer.install_archive(
                 archive,
                 cache_dir=cache,
                 expected_sha256="0" * 64,
+            )
+
+    def test_metadata_path_escape_is_rejected(self):
+        cache = self.root / "cache"
+        cache.mkdir()
+        (cache / ".0.5_FLAG").touch()
+        archive = _archive(
+            self.root / "camoufox-152.0.4-beta.30-lin.x86_64.zip",
+            reverse_release="../escape",
+        )
+
+        with self.assertRaisesRegex(installer.InstallError, "invalid reverse_release"):
+            installer.install_archive(
+                archive, cache_dir=cache, expected_sha256=_digest(archive)
             )
 
 

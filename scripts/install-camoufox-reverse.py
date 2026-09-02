@@ -17,9 +17,27 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+import re
 
 
 CAPABILITIES_FILE = "camoufox-reverse-capabilities.json"
+EXPECTED_DISTRIBUTION = "WhiteNightShadow/camoufox-reverse"
+EXPECTED_REVERSE_RELEASE = "reverse.2"
+MAX_MEMBERS = 50_000
+MAX_TOTAL_SIZE = 4 * 1024 * 1024 * 1024
+MAX_SINGLE_FILE_SIZE = 2 * 1024 * 1024 * 1024
+MAX_COMPRESSION_RATIO = 500
+VERSION_RE = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}$")
+BUILD_RE = re.compile(r"^[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*$")
+ASSET_RE = re.compile(
+    r"^camoufox-(?P<version>[^-]+)-(?P<build>[^-]+)-"
+    r"(?P<platform>lin|mac|win)\.(?P<arch>x86_64|arm64)\.zip$"
+)
+PLATFORM_EXECUTABLE = {
+    "lin": "camoufox-bin",
+    "mac": "Camoufox.app/Contents/MacOS/camoufox",
+    "win": "camoufox.exe",
+}
 
 
 class InstallError(RuntimeError):
@@ -56,6 +74,9 @@ def _read_json_from_zip(archive: zipfile.ZipFile, name: str) -> dict:
 
 def _safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     members = archive.infolist()
+    if len(members) > MAX_MEMBERS:
+        raise InstallError(f"archive has too many entries: {len(members)}")
+    total_size = 0
     for member in members:
         path = Path(member.filename)
         if path.is_absolute() or ".." in path.parts:
@@ -63,6 +84,17 @@ def _safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
         unix_mode = member.external_attr >> 16
         if unix_mode and stat.S_ISLNK(unix_mode):
             raise InstallError(f"archive symlinks are not supported: {member.filename}")
+        if member.file_size > MAX_SINGLE_FILE_SIZE:
+            raise InstallError(f"archive member is too large: {member.filename}")
+        total_size += member.file_size
+        if total_size > MAX_TOTAL_SIZE:
+            raise InstallError("archive expands beyond the 4 GiB safety limit")
+        if (
+            member.file_size > 1024 * 1024
+            and member.compress_size > 0
+            and member.file_size / member.compress_size > MAX_COMPRESSION_RATIO
+        ):
+            raise InstallError(f"suspicious compression ratio: {member.filename}")
     return members
 
 
@@ -83,8 +115,16 @@ def install_archive(
     archive_path = Path(archive_path).expanduser().resolve()
     if not archive_path.is_file():
         raise InstallError(f"archive not found: {archive_path}")
+    asset_match = ASSET_RE.fullmatch(archive_path.name)
+    if not asset_match:
+        raise InstallError(
+            "archive filename must match "
+            "camoufox-<version>-<build>-<lin|mac|win>.<arch>.zip"
+        )
     digest = _sha256(archive_path)
-    if expected_sha256 and digest.lower() != expected_sha256.lower():
+    if not expected_sha256:
+        raise InstallError("expected SHA256 is required")
+    if digest.lower() != expected_sha256.lower():
         raise InstallError(
             f"SHA256 mismatch: expected {expected_sha256.lower()}, got {digest}"
         )
@@ -106,7 +146,7 @@ def install_archive(
         members = _safe_members(archive)
         version_data = _read_json_from_zip(archive, "version.json")
         capabilities = _read_json_from_zip(archive, CAPABILITIES_FILE)
-        if capabilities.get("distribution") != "WhiteNightShadow/camoufox-reverse":
+        if capabilities.get("distribution") != EXPECTED_DISTRIBUTION:
             raise InstallError("archive capability marker has an unexpected distribution")
         if not capabilities.get("property_trace"):
             raise InstallError("archive does not declare PropertyTracer support")
@@ -117,12 +157,38 @@ def install_archive(
             or version_data.get("tag")
             or ""
         ).strip()
-        reverse_release = str(capabilities.get("reverse_release") or "reverse.1").strip()
+        reverse_release = str(capabilities.get("reverse_release") or "").strip()
         if not version or not build:
             raise InstallError("archive version.json is missing version/build")
+        if not VERSION_RE.fullmatch(version):
+            raise InstallError(f"invalid version metadata: {version!r}")
+        if not BUILD_RE.fullmatch(build):
+            raise InstallError(f"invalid build metadata: {build!r}")
+        if not BUILD_RE.fullmatch(reverse_release):
+            raise InstallError(f"invalid reverse_release metadata: {reverse_release!r}")
+        if version != asset_match.group("version") or build != asset_match.group("build"):
+            raise InstallError("archive filename and version.json do not agree")
+        if capabilities.get("schema") != 1:
+            raise InstallError("unsupported capability schema")
+        if capabilities.get("upstream_version") != f"{version}-{build}":
+            raise InstallError("capability marker and version.json do not agree")
+        if reverse_release != EXPECTED_REVERSE_RELEASE:
+            raise InstallError(
+                f"expected {EXPECTED_REVERSE_RELEASE}, got {reverse_release or 'missing'}"
+            )
+        if capabilities.get("property_trace_protocol") != 1:
+            raise InstallError("unsupported PropertyTracer protocol")
+        if capabilities.get("property_trace_hooks") != 75:
+            raise InstallError("archive does not contain the expected 75 trace hooks")
+        names = {member.filename.rstrip("/") for member in members}
+        executable = PLATFORM_EXECUTABLE[asset_match.group("platform")]
+        if executable not in names:
+            raise InstallError(f"archive is missing platform executable: {executable}")
         folder = f"{version}-{build}-{reverse_release}"
         repo_dir = cache / "browsers" / "whitenightshadow"
-        destination = repo_dir / folder
+        destination = (repo_dir / folder).resolve()
+        if destination.parent != repo_dir.resolve():
+            raise InstallError("installation metadata escapes the repository directory")
         if destination.exists():
             raise InstallError(f"destination already exists: {destination}")
 
@@ -158,7 +224,7 @@ def install_archive(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", help="downloaded camoufox-*.zip release asset")
-    parser.add_argument("--sha256", help="expected SHA256 from SHA256SUMS")
+    parser.add_argument("--sha256", required=True, help="expected SHA256 from SHA256SUMS")
     parser.add_argument("--cache-dir", help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:

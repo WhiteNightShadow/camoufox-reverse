@@ -48,13 +48,13 @@ python3 install-camoufox-reverse.py camoufox-152.0.4-beta.30-<platform>.zip \
 ```
 
 The installer refuses legacy flat-cache migration and places the build under
-`browsers/whitenightshadow/152.0.4-beta.30-reverse.1/`.
+`browsers/whitenightshadow/152.0.4-beta.30-reverse.2/`.
 3. Keep the official browser active. Select the reverse build only for one MCP
    launch:
 
 ```text
 launch_browser(
-  browser_version="whitenightshadow/152.0.4-beta.30-reverse.1",
+  browser_version="whitenightshadow/152.0.4-beta.30-reverse.2",
   enable_trace=True
 )
 ```

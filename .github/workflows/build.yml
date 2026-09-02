@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "*"
+      - "v152.0.4-beta.30-reverse.2"
 
 jobs:
   build:
@@ -130,6 +130,7 @@ jobs:
         with:
           name: CamoufoxBuilds-${{ matrix.target }}-${{ matrix.arch }}
           path: dist/*
+          if-no-files-found: error
 
   release:
     needs: build
@@ -138,6 +139,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -146,15 +149,61 @@ jobs:
       - name: Build integrity manifest
         shell: bash
         run: |
-          find artifacts -type f -name 'camoufox-*.zip' -exec cp '{}' . \;
-          sha256sum camoufox-*.zip > SHA256SUMS
           python3 - <<'PY'
           import hashlib
           import json
+          import shutil
+          import zipfile
           from pathlib import Path
 
+          expected = {
+              'camoufox-152.0.4-beta.30-lin.x86_64.zip': 'camoufox-bin',
+              'camoufox-152.0.4-beta.30-mac.arm64.zip':
+                  'Camoufox.app/Contents/MacOS/camoufox',
+              'camoufox-152.0.4-beta.30-mac.x86_64.zip':
+                  'Camoufox.app/Contents/MacOS/camoufox',
+              'camoufox-152.0.4-beta.30-win.x86_64.zip': 'camoufox.exe',
+          }
+          found = {}
+          for path in Path('artifacts').rglob('camoufox-*.zip'):
+              found.setdefault(path.name, []).append(path)
+          if set(found) != set(expected):
+              raise SystemExit(
+                  f'asset matrix mismatch: expected={sorted(expected)}, found={sorted(found)}'
+              )
+          duplicates = {name: paths for name, paths in found.items() if len(paths) != 1}
+          if duplicates:
+              raise SystemExit(f'duplicate asset basenames: {duplicates}')
+
           assets = []
-          for path in sorted(Path('.').glob('camoufox-*.zip')):
+          sums = []
+          for name, executable in expected.items():
+              source = found[name][0]
+              path = Path(name)
+              shutil.copy2(source, path)
+              with zipfile.ZipFile(path) as archive:
+                  names = {item.filename.rstrip('/') for item in archive.infolist()}
+                  required = {'version.json', 'camoufox-reverse-capabilities.json', executable}
+                  missing = sorted(required - names)
+                  if missing:
+                      raise SystemExit(f'{name}: missing archive entries: {missing}')
+                  version = json.loads(archive.read('version.json'))
+                  capability = json.loads(
+                      archive.read('camoufox-reverse-capabilities.json')
+                  )
+              if version != {'version': '152.0.4', 'release': 'beta.30'}:
+                  raise SystemExit(f'{name}: invalid version.json: {version}')
+              required_capability = {
+                  'schema': 1,
+                  'distribution': 'WhiteNightShadow/camoufox-reverse',
+                  'upstream_version': '152.0.4-beta.30',
+                  'reverse_release': 'reverse.2',
+                  'property_trace': True,
+                  'property_trace_protocol': 1,
+                  'property_trace_hooks': 75,
+              }
+              if capability != required_capability:
+                  raise SystemExit(f'{name}: invalid capability marker: {capability}')
               with path.open('rb') as asset_file:
                   digest = hashlib.file_digest(asset_file, 'sha256').hexdigest()
               assets.append({
@@ -162,11 +211,14 @@ jobs:
                   'size': path.stat().st_size,
                   'sha256': digest,
               })
+              sums.append(f'{digest}  {path.name}')
+          Path('SHA256SUMS').write_text('\n'.join(sums) + '\n', encoding='utf-8')
           Path('BUILD-MANIFEST.json').write_text(json.dumps({
               'schema': 1,
               'upstream_tag': 'v152.0.4-beta.30',
               'upstream_commit': '5d06ec1',
-              'reverse_release': 'reverse.1',
+              'reverse_release': 'reverse.2',
+              'reverse_commit': '${{ github.sha }}',
               'property_trace_hooks': 75,
               'assets': assets,
           }, indent=2) + '\n', encoding='utf-8')
@@ -182,7 +234,7 @@ jobs:
             BUILD-MANIFEST.json
             scripts/install-camoufox-reverse.py
           generate_release_notes: true
-          body_path: docs/releases/v152.0.4-beta.30-reverse.1.md
+          body_path: docs/releases/v152.0.4-beta.30-reverse.2.md
           draft: false
           prerelease: true
           make_latest: false
