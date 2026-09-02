@@ -37,9 +37,23 @@ protocol used by the previous Firefox 135 build.
 
 ### Side-by-side installation with Camoufox Python 0.5+
 
-1. Download the archive for your platform from this repository's
-   [Releases](https://github.com/WhiteNightShadow/camoufox-reverse/releases).
-2. Download `install-camoufox-reverse.py` from the same release and install the
+The current reverse build is based on the upstream `152.0.4-beta.30`
+prerelease. MCP v1.3.0 intentionally requires the active official browser and
+the selected reverse browser to have the same complete version/build, so first
+install and pin that exact official build:
+
+```bash
+camoufox fetch official/prerelease/152.0.4-beta.30
+camoufox set official/prerelease/152.0.4-beta.30
+camoufox active
+```
+
+The first command asks for confirmation because beta.30 is an upstream
+prerelease. The MCP never changes this setting itself.
+
+1. Download the archive for your platform from the exact
+   [reverse.2 release](https://github.com/WhiteNightShadow/camoufox-reverse/releases/tag/v152.0.4-beta.30-reverse.2).
+2. Download `install-camoufox-reverse.py` from that release and install the
    checked archive without changing active config:
 
 ```bash
