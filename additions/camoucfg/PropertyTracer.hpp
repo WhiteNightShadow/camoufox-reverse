@@ -9,10 +9,12 @@
  * Data is written to JSONL files on disk; MCP reads them via filesystem.
  *
  * Design:
- *   - Hot path: single atomic load (~1ns), zero overhead when disabled
- *   - Slow path: push to write buffer (mutex-protected)
- *   - Control thread: polls control file every 50ms for on/off commands
- *   - Flush thread: writes buffered events to disk every 100ms
+ *   - Disabled hot path: one atomic load and immediate return
+ *   - Enabled path: serialize and synchronously append under the session mutex
+ *   - Control thread: polls the control file every 50ms for on/off commands
+ *
+ * Tracing is opt-in and capped per session. High-volume traces can perturb page
+ * timing; keep sessions short or use object filters for timing-sensitive work.
  *
  * Written for camoufox-reverse project.
  */
@@ -118,4 +120,3 @@ class PropertyTracer {
 }  // namespace camou
 
 #endif  // CAMOU_PROPERTY_TRACER_H
-
