@@ -278,7 +278,12 @@ void PropertyTracer::RecordSlow(const char* object, const char* property,
 }
 
 void PropertyTracer::ControlThreadLoop() {
-  std::string lastCmd = "";  // empty so first check always processes
+  // Initialize from the state already acknowledged by Initialize(). Rewriting
+  // the same state on the first poll briefly truncated the status file, so an
+  // external reader could observe an empty acknowledgement. A command written
+  // before this thread starts is still handled whenever it differs here.
+  std::string lastCmd =
+      mEnabled.load(std::memory_order_acquire) ? "on" : "off";
   while (!mStop.load()) {
     std::string cmd = ReadControlFile(mControlPath);
     if (cmd != lastCmd) {
