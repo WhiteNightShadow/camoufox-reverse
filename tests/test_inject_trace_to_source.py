@@ -64,6 +64,57 @@ class InjectorTests(unittest.TestCase):
         self.assertEqual(kinds.count(injector.SET), 1)
         self.assertGreater(kinds.count(injector.CALL), 10)
 
+    def test_local_storage_hooks_follow_firefox_152_lsng_path(self):
+        hooks = [
+            hook for hook in injector.HOOKS
+            if hook.object_name == "localStorage"
+        ]
+        self.assertEqual(len(hooks), 2)
+        self.assertEqual(
+            {hook.property_name for hook in hooks}, {"getItem", "setItem"}
+        )
+        self.assertEqual(
+            {hook.path for hook in hooks}, {"dom/localstorage/LSObject.cpp"}
+        )
+        self.assertTrue(all("LSObject::" in hook.signature for hook in hooks))
+        self.assertFalse(
+            any(hook.path == "dom/storage/LocalStorage.cpp" for hook in hooks)
+        )
+
+    def test_firefox_152_lsobject_signatures_are_injected_once(self):
+        path = self._source(
+            "dom/localstorage/LSObject.cpp",
+            "#include <x>\n"
+            "void LSObject::GetItem(const nsAString& aKey, nsAString& aResult, "
+            "nsIPrincipal& aSubjectPrincipal, ErrorResult& aError) {}\n"
+            "void LSObject::SetItem(const nsAString& aKey, const nsAString& aValue, "
+            "nsIPrincipal& aSubjectPrincipal, ErrorResult& aError) {}\n",
+        )
+        hooks = [
+            hook for hook in injector.HOOKS
+            if hook.object_name == "localStorage"
+        ]
+        result = self._run(hooks, mode="apply", ensure_build_files=False)
+        self.assertEqual(result["applied"], 2)
+        text = path.read_text()
+        for hook in hooks:
+            self.assertEqual(text.count(hook.marker), 1)
+
+    def test_reusing_reverse4_source_with_legacy_sites_fails_closed(self):
+        self._source(
+            "dom/storage/LocalStorage.cpp",
+            "#include <x>\n"
+            "void LocalStorage::GetItem() {\n"
+            "  /* PropertyTracer injected: "
+            "localStorage.getItem@dom/storage/LocalStorage.cpp */\n"
+            "}\n",
+        )
+        with self.assertRaisesRegex(
+            injector.InjectionError,
+            "deprecated PropertyTracer sites found; use a clean Firefox source tree",
+        ):
+            self._run([])
+
     def test_missing_file_and_symbol_fail_closed(self):
         with self.assertRaisesRegex(injector.InjectionError, "required file"):
             self._run([self._hook("dom/base/Missing.cpp")])

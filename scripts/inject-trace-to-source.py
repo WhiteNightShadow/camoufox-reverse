@@ -147,8 +147,8 @@ HOOKS: tuple[Hook, ...] = (
     Hook("dom/media/webrtc/jsapi/PeerConnectionImpl.cpp", r"already_AddRefed<RTCDataChannel>\s+PeerConnectionImpl::CreateDataChannel\s*\(", "webrtc", "createDataChannel", CALL),
     _hook("dom/media/MediaDevices.cpp", "MediaDevices", "EnumerateDevices", "mediaDevices", "enumerateDevices", CALL),
     Hook("dom/media/MediaDevices.cpp", r"already_AddRefed<Promise>\s+MediaDevices::GetUserMedia\s*\(", "mediaDevices", "getUserMedia", CALL),
-    _hook("dom/storage/LocalStorage.cpp", "LocalStorage", "GetItem", "localStorage", "getItem", CALL),
-    _hook("dom/storage/LocalStorage.cpp", "LocalStorage", "SetItem", "localStorage", "setItem", CALL),
+    _hook("dom/localstorage/LSObject.cpp", "LSObject", "GetItem", "localStorage", "getItem", CALL),
+    _hook("dom/localstorage/LSObject.cpp", "LSObject", "SetItem", "localStorage", "setItem", CALL),
     _hook("dom/storage/SessionStorage.cpp", "SessionStorage", "GetItem", "sessionStorage", "getItem", CALL),
     _hook("dom/storage/SessionStorage.cpp", "SessionStorage", "SetItem", "sessionStorage", "setItem", CALL),
     _hook("layout/style/FontFaceSet.cpp", "FontFaceSet", "Check", "fonts", "check", CALL),
@@ -165,6 +165,12 @@ AUDIO_INLINE = "float SampleRate() const { return mSampleRate; }"
 AUDIO_DECL = "float SampleRate() const;"
 AUDIO_DEF = "float AudioContext::SampleRate() const {"
 AUDIO_ANCHOR = "double AudioContext::OutputLatency() {"
+DEPRECATED_SITE_PATHS = {
+    "dom/storage/LocalStorage.cpp": (
+        "localStorage.getItem@dom/storage/LocalStorage.cpp",
+        "localStorage.setItem@dom/storage/LocalStorage.cpp",
+    ),
+}
 
 
 class SourcePlan:
@@ -207,6 +213,29 @@ class SourcePlan:
             for path, text in self.current.items()
             if text != self.original[path]
         }
+
+
+def _reject_deprecated_sites(plan: SourcePlan) -> None:
+    """Fail closed when an older injected source tree is reused.
+
+    The injector is intentionally additive and cannot infer whether arbitrary
+    old native records are safe to remove. A reverse.4 tree contains two
+    LocalStorage markers outside the reverse.5 manifest, so building on it
+    would silently leave 77 physical sites while advertising 75.
+    """
+
+    found: list[str] = []
+    for relative, sites in DEPRECATED_SITE_PATHS.items():
+        path = plan.path(relative)
+        if not path.is_file():
+            continue
+        text = plan.read(relative)
+        found.extend(site for site in sites if site in text)
+    if found:
+        raise InjectionError(
+            "deprecated PropertyTracer sites found; use a clean Firefox source tree: "
+            + ", ".join(sorted(found))
+        )
 
 
 def _ensure_include(text: str) -> str:
@@ -456,6 +485,7 @@ def run_injection(
         raise InjectionError(
             f"source version {actual_version!r}; expected {expect_version!r}"
         )
+    _reject_deprecated_sites(plan)
 
     applied = already = 0
     source_paths: set[str] = set()

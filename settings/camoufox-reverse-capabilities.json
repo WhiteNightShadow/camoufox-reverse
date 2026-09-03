@@ -2,7 +2,7 @@
   "schema": 1,
   "distribution": "WhiteNightShadow/camoufox-reverse",
   "upstream_version": "152.0.4-beta.30",
-  "reverse_release": "reverse.4",
+  "reverse_release": "reverse.5",
   "property_trace": true,
   "property_trace_protocol": 1,
   "property_trace_hooks": 75,

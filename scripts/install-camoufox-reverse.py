@@ -22,7 +22,7 @@ import re
 
 CAPABILITIES_FILE = "camoufox-reverse-capabilities.json"
 EXPECTED_DISTRIBUTION = "WhiteNightShadow/camoufox-reverse"
-EXPECTED_REVERSE_RELEASE = "reverse.4"
+EXPECTED_REVERSE_RELEASE = "reverse.5"
 REQUIRED_TRACE_FEATURES = {
     "async_buffered_io",
     "event_kind",

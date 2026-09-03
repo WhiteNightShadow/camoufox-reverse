@@ -19,7 +19,7 @@ sys.modules[SPEC.name] = installer
 SPEC.loader.exec_module(installer)
 
 
-def _archive(path: Path, *, unsafe: bool = False, reverse_release: str = "reverse.4") -> Path:
+def _archive(path: Path, *, unsafe: bool = False, reverse_release: str = "reverse.5") -> Path:
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
             "version.json",
@@ -79,7 +79,7 @@ class InstallerTests(unittest.TestCase):
 
         self.assertEqual(
             result["selector"],
-            "whitenightshadow/152.0.4-beta.30-reverse.4",
+            "whitenightshadow/152.0.4-beta.30-reverse.5",
         )
         self.assertFalse(result["active_config_changed"])
         self.assertTrue((Path(result["path"]) / "camoufox-bin").is_file())
@@ -132,6 +132,22 @@ class InstallerTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(installer.InstallError, "invalid reverse_release"):
+            installer.install_archive(
+                archive, cache_dir=cache, expected_sha256=_digest(archive)
+            )
+
+    def test_reverse5_installer_rejects_an_older_release_archive(self):
+        cache = self.root / "cache"
+        cache.mkdir()
+        (cache / ".0.5_FLAG").touch()
+        archive = _archive(
+            self.root / "camoufox-152.0.4-beta.30-lin.x86_64.zip",
+            reverse_release="reverse.4",
+        )
+
+        with self.assertRaisesRegex(
+            installer.InstallError, "expected reverse.5, got reverse.4"
+        ):
             installer.install_archive(
                 archive, cache_dir=cache, expected_sha256=_digest(archive)
             )

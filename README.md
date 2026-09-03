@@ -29,10 +29,14 @@ current Firefox 152 build is based on upstream `v152.0.4-beta.30`, preserves the
 Firefox 135 JSONL/control contract, and still covers the same 75 fingerprint-
 relevant native injection sites.
 
-`reverse.4` strengthens that baseline without expanding the default hook set:
-correct get/set/call classification, native source-site IDs, per-process
-sequence numbers, mergeable wall-clock microseconds, exclusive session files,
-and buffered short-write-safe I/O. It does not rewrite page JavaScript objects,
+`reverse.5` keeps the `reverse.4` correctness and isolation improvements while
+moving the two `localStorage` hooks from Firefox's disabled-by-default,
+unsupported legacy implementation to the Firefox 152 LSNG `LSObject` path.
+The hook count remains 75 and the
+protocol-v1 event/control contract is unchanged. The baseline includes correct
+get/set/call classification, native source-site IDs, per-process sequence
+numbers, mergeable wall-clock microseconds, exclusive session files, and
+buffered short-write-safe I/O. It does not rewrite page JavaScript objects,
 descriptors, or prototypes. High-volume native tracing can still affect timing,
 so it remains explicitly opt-in and capped.
 
@@ -60,7 +64,7 @@ The first command asks for confirmation because beta.30 is an upstream
 prerelease. The MCP never changes this setting itself.
 
 1. Download the archive for your platform from the exact
-   [reverse.4 release](https://github.com/WhiteNightShadow/camoufox-reverse/releases/tag/v152.0.4-beta.30-reverse.4).
+   [reverse.5 release](https://github.com/WhiteNightShadow/camoufox-reverse/releases/tag/v152.0.4-beta.30-reverse.5).
 2. Download `install-camoufox-reverse.py` from that release and install the
    checked archive without changing active config:
 
@@ -70,7 +74,7 @@ python3 install-camoufox-reverse.py camoufox-152.0.4-beta.30-<platform>.zip \
 ```
 
 The installer refuses legacy flat-cache migration and places the build under
-`browsers/whitenightshadow/152.0.4-beta.30-reverse.4/`.
+`browsers/whitenightshadow/152.0.4-beta.30-reverse.5/`.
 Use the provided installer rather than a bare archive extraction: cross-built
 zip files do not reliably preserve executable mode bits, while the installer
 normalizes them before the browser is selected.
@@ -79,7 +83,7 @@ normalizes them before the browser is selected.
 
 ```text
 launch_browser(
-  browser_version="whitenightshadow/152.0.4-beta.30-reverse.4",
+  browser_version="whitenightshadow/152.0.4-beta.30-reverse.5",
   enable_trace=True
 )
 ```
@@ -92,7 +96,8 @@ upstream sandbox and behavior.
 Run `check_environment()` to list the exact installed selector. Camoufox Python
 0.4.x keeps its existing flat-cache behavior; omit `browser_version` to preserve
 that path. Do not clear or overwrite a Camoufox 0.5 cache root. The previous
-`reverse.2` and `reverse.3` remain supported; no existing installation must migrate.
+`reverse.2`, `reverse.3`, and `reverse.4` remain supported; no existing
+installation must migrate.
 
 > 中文说明：152 定制版与官方版并存，默认仍走官方/当前 active 版本；只有显式传
 > `browser_version` 才会启动 PropertyTracer 版本，因此不会影响现有 135 用户。
