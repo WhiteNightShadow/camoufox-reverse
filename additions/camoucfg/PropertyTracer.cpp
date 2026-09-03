@@ -20,12 +20,6 @@ typedef int pid_t;
 #  define write  _write
 #  define fsync  _commit
 #  define getpid _getpid
-#  ifndef O_CLOEXEC
-#    define O_CLOEXEC _O_NOINHERIT
-#  endif
-#  ifndef O_BINARY
-#    define O_BINARY _O_BINARY
-#  endif
 #else
 #  include <unistd.h>
 #  ifndef O_BINARY
@@ -44,7 +38,8 @@ std::filesystem::path NativePath(const std::string& path) {
 int OpenTraceFile(const std::string& path) {
 #ifdef _WIN32
   return _wopen(NativePath(path).c_str(),
-                O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_BINARY, 0600);
+                _O_WRONLY | _O_CREAT | _O_EXCL | _O_NOINHERIT | _O_BINARY,
+                _S_IREAD | _S_IWRITE);
 #else
   return open(path.c_str(),
               O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_BINARY, 0600);

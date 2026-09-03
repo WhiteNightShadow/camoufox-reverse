@@ -20,6 +20,7 @@ HARNESS = r"""
 #include "PropertyTracer.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <thread>
@@ -32,9 +33,7 @@ HARNESS = r"""
 #  include <unistd.h>
 #endif
 
-int main(int argc, char** argv) {
-  if (argc != 2) return 2;
-  const std::string base = argv[1];
+int Run(const std::string& base) {
   auto& tracer = camou::PropertyTracer::Instance();
   tracer.Initialize(base, {}, 10000);
 
@@ -54,10 +53,10 @@ int main(int argc, char** argv) {
                               std::to_string(getpid()) + ".cmd";
   const std::string status = base + "/control/status-" +
                              std::to_string(getpid()) + ".state";
-  { std::ofstream file(control); file << "off"; }
+  { std::ofstream file(std::filesystem::u8path(control)); file << "off"; }
   std::this_thread::sleep_for(std::chrono::milliseconds(180));
   {
-    std::ifstream file(status);
+    std::ifstream file(std::filesystem::u8path(status));
     std::string state;
     file >> state;
     if (state != "off") return 3;
@@ -67,11 +66,11 @@ int main(int argc, char** argv) {
                   "document.cookie.set@dom/base/Document.cpp");
   }
 
-  { std::ofstream file(base + "/desired.state"); file << "on"; }
-  { std::ofstream file(control); file << "on"; }
+  { std::ofstream file(std::filesystem::u8path(base + "/desired.state")); file << "on"; }
+  { std::ofstream file(std::filesystem::u8path(control)); file << "on"; }
   std::this_thread::sleep_for(std::chrono::milliseconds(180));
   {
-    std::ifstream file(status);
+    std::ifstream file(std::filesystem::u8path(status));
     std::string state;
     file >> state;
     if (state != "on") return 4;
@@ -83,19 +82,19 @@ int main(int argc, char** argv) {
   tracer.Shutdown();
 
   // A newly-created process/session must honor the run-level desired state.
-  { std::ofstream file(base + "/desired.state"); file << "off"; }
+  { std::ofstream file(std::filesystem::u8path(base + "/desired.state")); file << "off"; }
   tracer.Initialize(base, {}, 10000);
   for (int i = 0; i < 20; ++i) {
     tracer.Record("window", "innerWidth", nullptr, 0, "window.innerWidth@test");
   }
   {
-    std::ifstream file(status);
+    std::ifstream file(std::filesystem::u8path(status));
     std::string state;
     file >> state;
     if (state != "off") return 5;
   }
-  { std::ofstream file(base + "/desired.state"); file << "on"; }
-  { std::ofstream file(control); file << "on"; }
+  { std::ofstream file(std::filesystem::u8path(base + "/desired.state")); file << "on"; }
+  { std::ofstream file(std::filesystem::u8path(control)); file << "on"; }
   std::this_thread::sleep_for(std::chrono::milliseconds(180));
   for (int i = 0; i < 5; ++i) {
     tracer.Record("window", "innerWidth", nullptr, 0, "window.innerWidth@test");
@@ -103,6 +102,18 @@ int main(int argc, char** argv) {
   tracer.Shutdown();
   return 0;
 }
+
+#ifdef _WIN32
+int wmain(int argc, wchar_t** argv) {
+  if (argc != 2) return 2;
+  return Run(std::filesystem::path(argv[1]).u8string());
+}
+#else
+int main(int argc, char** argv) {
+  if (argc != 2) return 2;
+  return Run(argv[1]);
+}
+#endif
 """
 
 
