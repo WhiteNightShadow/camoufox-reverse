@@ -189,8 +189,8 @@ def install_archive(
             )
         if capabilities.get("property_trace_protocol") != 1:
             raise InstallError("unsupported PropertyTracer protocol")
-        if capabilities.get("property_trace_hooks") != 75:
-            raise InstallError("archive does not contain the expected 75 trace hooks")
+        if capabilities.get("property_trace_hooks") != 77:
+            raise InstallError("archive does not contain the expected 77 trace hooks")
         features = capabilities.get("property_trace_features")
         if not isinstance(features, list):
             raise InstallError("archive does not declare PropertyTracer feature metadata")

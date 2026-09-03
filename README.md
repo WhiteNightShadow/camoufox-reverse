@@ -26,14 +26,15 @@
 This fork keeps upstream Camoufox unchanged by default and publishes a separate,
 opt-in browser build with a native Gecko DOM/Web API `PropertyTracer`. The
 current Firefox 152 build is based on upstream `v152.0.4-beta.30`, preserves the
-Firefox 135 JSONL/control contract, and still covers the same 75 fingerprint-
-relevant native injection sites.
+Firefox 135 JSONL/control contract, and covers 77 fingerprint-relevant native
+injection sites.
 
 `reverse.5` keeps the `reverse.4` correctness and isolation improvements while
 moving the two `localStorage` hooks from Firefox's disabled-by-default,
-unsupported legacy implementation to the Firefox 152 LSNG `LSObject` path.
-The hook count remains 75 and the
-protocol-v1 event/control contract is unchanged. The baseline includes correct
+unsupported legacy implementation to the Firefox 152 LSNG `LSObject` path and
+covering the separate, default-reachable `PartitionedLocalStorage` branch with
+two additional native sites. The hook count is 77; the protocol-v1
+event/control contract is unchanged. The baseline includes correct
 get/set/call classification, native source-site IDs, per-process sequence
 numbers, mergeable wall-clock microseconds, exclusive session files, and
 buffered short-write-safe I/O. It does not rewrite page JavaScript objects,

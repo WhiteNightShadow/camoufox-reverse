@@ -93,7 +93,7 @@ dir:
 	python3 scripts/inject-trace-to-source.py $(cf_source_dir) \
 		--apply --strict \
 		--expect-version $(version)-$(release) \
-		--expect-hooks 75
+		--expect-hooks 77
 	touch $(cf_source_dir)/_READY
 
 test-trace-injector:

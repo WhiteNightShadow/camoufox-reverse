@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 DEFAULT_EXPECT_VERSION = "152.0.4-beta.30"
-DEFAULT_EXPECT_HOOKS = 75
+DEFAULT_EXPECT_HOOKS = 77
 GET = 0
 SET = 1
 CALL = 2
@@ -149,6 +149,8 @@ HOOKS: tuple[Hook, ...] = (
     Hook("dom/media/MediaDevices.cpp", r"already_AddRefed<Promise>\s+MediaDevices::GetUserMedia\s*\(", "mediaDevices", "getUserMedia", CALL),
     _hook("dom/localstorage/LSObject.cpp", "LSObject", "GetItem", "localStorage", "getItem", CALL),
     _hook("dom/localstorage/LSObject.cpp", "LSObject", "SetItem", "localStorage", "setItem", CALL),
+    _hook("dom/storage/PartitionedLocalStorage.cpp", "PartitionedLocalStorage", "GetItem", "localStorage", "getItem", CALL),
+    _hook("dom/storage/PartitionedLocalStorage.cpp", "PartitionedLocalStorage", "SetItem", "localStorage", "setItem", CALL),
     _hook("dom/storage/SessionStorage.cpp", "SessionStorage", "GetItem", "sessionStorage", "getItem", CALL),
     _hook("dom/storage/SessionStorage.cpp", "SessionStorage", "SetItem", "sessionStorage", "setItem", CALL),
     _hook("layout/style/FontFaceSet.cpp", "FontFaceSet", "Check", "fonts", "check", CALL),
@@ -221,7 +223,7 @@ def _reject_deprecated_sites(plan: SourcePlan) -> None:
     The injector is intentionally additive and cannot infer whether arbitrary
     old native records are safe to remove. A reverse.4 tree contains two
     LocalStorage markers outside the reverse.5 manifest, so building on it
-    would silently leave 77 physical sites while advertising 75.
+    would silently leave 79 physical sites while advertising 77.
     """
 
     found: list[str] = []

@@ -5,7 +5,7 @@
   "reverse_release": "reverse.5",
   "property_trace": true,
   "property_trace_protocol": 1,
-  "property_trace_hooks": 75,
+  "property_trace_hooks": 77,
   "property_trace_features": [
     "async_buffered_io",
     "event_kind",

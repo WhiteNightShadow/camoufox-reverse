@@ -217,7 +217,7 @@ jobs:
                   'reverse_release': 'reverse.5',
                   'property_trace': True,
                   'property_trace_protocol': 1,
-                  'property_trace_hooks': 75,
+                  'property_trace_hooks': 77,
                   'property_trace_features': [
                       'async_buffered_io',
                       'event_kind',
@@ -248,7 +248,7 @@ jobs:
               'reverse_release': 'reverse.5',
               'reverse_commit': '${{ github.sha }}',
               'property_trace_protocol': 1,
-              'property_trace_hooks': 75,
+              'property_trace_hooks': 77,
               'property_trace_features': [
                   'async_buffered_io',
                   'event_kind',

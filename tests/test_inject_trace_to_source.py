@@ -54,29 +54,44 @@ class InjectorTests(unittest.TestCase):
             **kwargs,
         )
 
-    def test_manifest_has_exactly_75_unique_sites(self):
+    def test_manifest_has_exactly_77_unique_sites(self):
         sites = [hook.site_id for hook in injector.HOOKS]
         sites.append(injector.AUDIO_SITE)
-        self.assertEqual(len(injector.HOOKS) + 1, 75)
+        self.assertEqual(len(injector.HOOKS) + 1, 77)
         self.assertEqual(len(sites), len(set(sites)))
         kinds = [hook.kind for hook in injector.HOOKS] + [injector.GET]
         self.assertEqual(set(kinds), {injector.GET, injector.SET, injector.CALL})
         self.assertEqual(kinds.count(injector.SET), 1)
         self.assertGreater(kinds.count(injector.CALL), 10)
 
-    def test_local_storage_hooks_follow_firefox_152_lsng_path(self):
+    def test_local_storage_hooks_cover_firefox_152_reachable_paths(self):
         hooks = [
             hook for hook in injector.HOOKS
             if hook.object_name == "localStorage"
         ]
-        self.assertEqual(len(hooks), 2)
+        self.assertEqual(len(hooks), 4)
         self.assertEqual(
-            {hook.property_name for hook in hooks}, {"getItem", "setItem"}
+            [hook.property_name for hook in hooks].count("getItem"), 2
         )
         self.assertEqual(
-            {hook.path for hook in hooks}, {"dom/localstorage/LSObject.cpp"}
+            [hook.property_name for hook in hooks].count("setItem"), 2
         )
-        self.assertTrue(all("LSObject::" in hook.signature for hook in hooks))
+        self.assertEqual(
+            {hook.path for hook in hooks},
+            {
+                "dom/localstorage/LSObject.cpp",
+                "dom/storage/PartitionedLocalStorage.cpp",
+            },
+        )
+        self.assertEqual(
+            [hook.path for hook in hooks].count("dom/localstorage/LSObject.cpp"), 2
+        )
+        self.assertEqual(
+            [hook.path for hook in hooks].count(
+                "dom/storage/PartitionedLocalStorage.cpp"
+            ),
+            2,
+        )
         self.assertFalse(
             any(hook.path == "dom/storage/LocalStorage.cpp" for hook in hooks)
         )
@@ -92,7 +107,26 @@ class InjectorTests(unittest.TestCase):
         )
         hooks = [
             hook for hook in injector.HOOKS
-            if hook.object_name == "localStorage"
+            if hook.path == "dom/localstorage/LSObject.cpp"
+        ]
+        result = self._run(hooks, mode="apply", ensure_build_files=False)
+        self.assertEqual(result["applied"], 2)
+        text = path.read_text()
+        for hook in hooks:
+            self.assertEqual(text.count(hook.marker), 1)
+
+    def test_firefox_152_partitioned_storage_signatures_are_injected_once(self):
+        path = self._source(
+            "dom/storage/PartitionedLocalStorage.cpp",
+            "#include <x>\n"
+            "void PartitionedLocalStorage::GetItem(const nsAString& aKey, "
+            "nsAString& aResult, ErrorResult& aError) {}\n"
+            "void PartitionedLocalStorage::SetItem(const nsAString& aKey, "
+            "const nsAString& aValue, ErrorResult& aError) {}\n",
+        )
+        hooks = [
+            hook for hook in injector.HOOKS
+            if hook.path == "dom/storage/PartitionedLocalStorage.cpp"
         ]
         result = self._run(hooks, mode="apply", ensure_build_files=False)
         self.assertEqual(result["applied"], 2)

@@ -35,7 +35,7 @@ def _archive(path: Path, *, unsafe: bool = False, reverse_release: str = "revers
                     "reverse_release": reverse_release,
                     "property_trace": True,
                     "property_trace_protocol": 1,
-                    "property_trace_hooks": 75,
+                    "property_trace_hooks": 77,
                     "property_trace_features": sorted(
                         installer.REQUIRED_TRACE_FEATURES
                     ),
