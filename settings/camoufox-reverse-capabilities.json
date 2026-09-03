@@ -2,8 +2,19 @@
   "schema": 1,
   "distribution": "WhiteNightShadow/camoufox-reverse",
   "upstream_version": "152.0.4-beta.30",
-  "reverse_release": "reverse.3",
+  "reverse_release": "reverse.4",
   "property_trace": true,
   "property_trace_protocol": 1,
-  "property_trace_hooks": 75
+  "property_trace_hooks": 75,
+  "property_trace_features": [
+    "async_buffered_io",
+    "event_kind",
+    "native_site",
+    "wall_time_us",
+    "sequence",
+    "exclusive_session_files",
+    "control_ack",
+    "utf8_paths",
+    "process_scope"
+  ]
 }

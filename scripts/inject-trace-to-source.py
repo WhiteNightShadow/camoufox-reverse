@@ -16,6 +16,9 @@ from typing import Iterable, Sequence
 
 DEFAULT_EXPECT_VERSION = "152.0.4-beta.30"
 DEFAULT_EXPECT_HOOKS = 75
+GET = 0
+SET = 1
+CALL = 2
 INCLUDE_LINE = '#include "PropertyTracer.hpp"'
 LOCAL_INCLUDE_LINE = 'LOCAL_INCLUDES += ["/camoucfg"]'
 ROOT_DIR_LINE = 'DIRS += ["camoucfg"]'
@@ -31,6 +34,7 @@ class Hook:
     signature: str
     object_name: str
     property_name: str
+    kind: int = GET
 
     @property
     def site_id(self) -> str:
@@ -47,16 +51,25 @@ class Hook:
     def record(self) -> str:
         return (
             "camou::PropertyTracer::Instance().Record("
-            f'"{self.object_name}", "{self.property_name}");'
+            f'"{self.object_name}", "{self.property_name}", nullptr, '
+            f'{self.kind}, "{self.site_id}");'
         )
 
 
-def _hook(path: str, cls: str, func: str, obj: str, prop: str) -> Hook:
+def _hook(
+    path: str,
+    cls: str,
+    func: str,
+    obj: str,
+    prop: str,
+    kind: int = GET,
+) -> Hook:
     return Hook(
         path,
         rf"\b{re.escape(cls)}::{re.escape(func)}\s*\(",
         obj,
         prop,
+        kind,
     )
 
 
@@ -65,6 +78,7 @@ WEBGL_GET_EXTENSION_HOOK = Hook(
     r"void\s+ClientWebGLContext::GetExtension\s*\(\s*JSContext\s*\*\s*cx\s*,",
     "webgl",
     "getExtension",
+    CALL,
 )
 
 
@@ -112,14 +126,14 @@ HOOKS: tuple[Hook, ...] = (
     _hook("dom/battery/BatteryManager.cpp", "BatteryManager", "ChargingTime", "battery", "chargingTime"),
     _hook("dom/battery/BatteryManager.cpp", "BatteryManager", "DischargingTime", "battery", "dischargingTime"),
     _hook("dom/battery/BatteryManager.cpp", "BatteryManager", "Level", "battery", "level"),
-    _hook("dom/canvas/CanvasRenderingContext2D.cpp", "CanvasRenderingContext2D", "GetImageData", "canvas2d", "getImageData"),
-    _hook("dom/html/HTMLCanvasElement.cpp", "HTMLCanvasElement", "ToDataURL", "canvas", "toDataURL"),
-    _hook("dom/html/HTMLCanvasElement.cpp", "HTMLCanvasElement", "ToBlob", "canvas", "toBlob"),
-    Hook("dom/html/HTMLCanvasElement.cpp", r"already_AddRefed<nsISupports>\s+HTMLCanvasElement::GetContext\s*\(\s*JSContext\s*\*", "canvas", "getContext"),
-    _hook("dom/canvas/ClientWebGLContext.cpp", "ClientWebGLContext", "GetParameter", "webgl", "getParameter"),
-    _hook("dom/canvas/ClientWebGLContext.cpp", "ClientWebGLContext", "GetSupportedExtensions", "webgl", "getSupportedExtensions"),
+    _hook("dom/canvas/CanvasRenderingContext2D.cpp", "CanvasRenderingContext2D", "GetImageData", "canvas2d", "getImageData", CALL),
+    _hook("dom/html/HTMLCanvasElement.cpp", "HTMLCanvasElement", "ToDataURL", "canvas", "toDataURL", CALL),
+    _hook("dom/html/HTMLCanvasElement.cpp", "HTMLCanvasElement", "ToBlob", "canvas", "toBlob", CALL),
+    Hook("dom/html/HTMLCanvasElement.cpp", r"already_AddRefed<nsISupports>\s+HTMLCanvasElement::GetContext\s*\(\s*JSContext\s*\*", "canvas", "getContext", CALL),
+    _hook("dom/canvas/ClientWebGLContext.cpp", "ClientWebGLContext", "GetParameter", "webgl", "getParameter", CALL),
+    _hook("dom/canvas/ClientWebGLContext.cpp", "ClientWebGLContext", "GetSupportedExtensions", "webgl", "getSupportedExtensions", CALL),
     WEBGL_GET_EXTENSION_HOOK,
-    _hook("dom/canvas/ClientWebGLContext.cpp", "ClientWebGLContext", "GetShaderPrecisionFormat", "webgl", "getShaderPrecisionFormat"),
+    _hook("dom/canvas/ClientWebGLContext.cpp", "ClientWebGLContext", "GetShaderPrecisionFormat", "webgl", "getShaderPrecisionFormat", CALL),
     _hook("dom/media/webaudio/AudioContext.cpp", "AudioContext", "OutputLatency", "audioContext", "outputLatency"),
     _hook("dom/base/nsPluginArray.cpp", "nsPluginArray", "IndexedGetter", "navigator.plugins", "indexedGetter"),
     _hook("dom/base/nsPluginArray.cpp", "nsPluginArray", "NamedGetter", "navigator.plugins", "namedGetter"),
@@ -127,22 +141,22 @@ HOOKS: tuple[Hook, ...] = (
     _hook("dom/base/nsMimeTypeArray.cpp", "nsMimeTypeArray", "NamedGetter", "navigator.mimeTypes", "namedGetter"),
     _hook("dom/performance/PerformanceMainThread.cpp", "PerformanceMainThread", "Timing", "performance", "timing"),
     _hook("dom/base/Document.cpp", "Document", "GetCookie", "document", "cookie.get"),
-    _hook("dom/base/Document.cpp", "Document", "SetCookie", "document", "cookie.set"),
-    Hook("dom/media/webrtc/jsapi/PeerConnectionImpl.cpp", r"PeerConnectionImpl::CreateOffer\s*\(\s*const\s+RTCOfferOptions\s*&", "webrtc", "createOffer"),
-    _hook("dom/media/webrtc/jsapi/PeerConnectionImpl.cpp", "PeerConnectionImpl", "CreateAnswer", "webrtc", "createAnswer"),
-    Hook("dom/media/webrtc/jsapi/PeerConnectionImpl.cpp", r"already_AddRefed<RTCDataChannel>\s+PeerConnectionImpl::CreateDataChannel\s*\(", "webrtc", "createDataChannel"),
-    _hook("dom/media/MediaDevices.cpp", "MediaDevices", "EnumerateDevices", "mediaDevices", "enumerateDevices"),
-    Hook("dom/media/MediaDevices.cpp", r"already_AddRefed<Promise>\s+MediaDevices::GetUserMedia\s*\(", "mediaDevices", "getUserMedia"),
-    _hook("dom/storage/LocalStorage.cpp", "LocalStorage", "GetItem", "localStorage", "getItem"),
-    _hook("dom/storage/LocalStorage.cpp", "LocalStorage", "SetItem", "localStorage", "setItem"),
-    _hook("dom/storage/SessionStorage.cpp", "SessionStorage", "GetItem", "sessionStorage", "getItem"),
-    _hook("dom/storage/SessionStorage.cpp", "SessionStorage", "SetItem", "sessionStorage", "setItem"),
-    _hook("layout/style/FontFaceSet.cpp", "FontFaceSet", "Check", "fonts", "check"),
-    _hook("layout/style/FontFaceSet.cpp", "FontFaceSet", "ForEach", "fonts", "forEach"),
-    _hook("dom/canvas/OffscreenCanvas.cpp", "OffscreenCanvas", "GetContext", "offscreenCanvas", "getContext"),
-    _hook("dom/canvas/OffscreenCanvas.cpp", "OffscreenCanvas", "TransferToImageBitmap", "offscreenCanvas", "transferToImageBitmap"),
-    Hook("dom/geolocation/Geolocation.cpp", r"void\s+Geolocation::GetCurrentPosition\s*\(\s*PositionCallback\s*&", "geolocation", "getCurrentPosition"),
-    Hook("dom/geolocation/Geolocation.cpp", r"int32_t\s+Geolocation::WatchPosition\s*\(\s*PositionCallback\s*&", "geolocation", "watchPosition"),
+    _hook("dom/base/Document.cpp", "Document", "SetCookie", "document", "cookie.set", SET),
+    Hook("dom/media/webrtc/jsapi/PeerConnectionImpl.cpp", r"PeerConnectionImpl::CreateOffer\s*\(\s*const\s+RTCOfferOptions\s*&", "webrtc", "createOffer", CALL),
+    _hook("dom/media/webrtc/jsapi/PeerConnectionImpl.cpp", "PeerConnectionImpl", "CreateAnswer", "webrtc", "createAnswer", CALL),
+    Hook("dom/media/webrtc/jsapi/PeerConnectionImpl.cpp", r"already_AddRefed<RTCDataChannel>\s+PeerConnectionImpl::CreateDataChannel\s*\(", "webrtc", "createDataChannel", CALL),
+    _hook("dom/media/MediaDevices.cpp", "MediaDevices", "EnumerateDevices", "mediaDevices", "enumerateDevices", CALL),
+    Hook("dom/media/MediaDevices.cpp", r"already_AddRefed<Promise>\s+MediaDevices::GetUserMedia\s*\(", "mediaDevices", "getUserMedia", CALL),
+    _hook("dom/storage/LocalStorage.cpp", "LocalStorage", "GetItem", "localStorage", "getItem", CALL),
+    _hook("dom/storage/LocalStorage.cpp", "LocalStorage", "SetItem", "localStorage", "setItem", CALL),
+    _hook("dom/storage/SessionStorage.cpp", "SessionStorage", "GetItem", "sessionStorage", "getItem", CALL),
+    _hook("dom/storage/SessionStorage.cpp", "SessionStorage", "SetItem", "sessionStorage", "setItem", CALL),
+    _hook("layout/style/FontFaceSet.cpp", "FontFaceSet", "Check", "fonts", "check", CALL),
+    _hook("layout/style/FontFaceSet.cpp", "FontFaceSet", "ForEach", "fonts", "forEach", CALL),
+    _hook("dom/canvas/OffscreenCanvas.cpp", "OffscreenCanvas", "GetContext", "offscreenCanvas", "getContext", CALL),
+    _hook("dom/canvas/OffscreenCanvas.cpp", "OffscreenCanvas", "TransferToImageBitmap", "offscreenCanvas", "transferToImageBitmap", CALL),
+    Hook("dom/geolocation/Geolocation.cpp", r"void\s+Geolocation::GetCurrentPosition\s*\(\s*PositionCallback\s*&", "geolocation", "getCurrentPosition", CALL),
+    Hook("dom/geolocation/Geolocation.cpp", r"int32_t\s+Geolocation::WatchPosition\s*\(\s*PositionCallback\s*&", "geolocation", "watchPosition", CALL),
 )
 
 AUDIO_SITE = "audioContext.sampleRate"
@@ -306,7 +320,11 @@ def _apply_audio(plan: SourcePlan) -> str:
     source_path = "dom/media/webaudio/AudioContext.cpp"
     header = plan.read(header_path)
     source = plan.read(source_path)
-    record = 'camou::PropertyTracer::Instance().Record("audioContext", "sampleRate");'
+    record = (
+        'camou::PropertyTracer::Instance().Record('
+        '"audioContext", "sampleRate", nullptr, 0, '
+        '"audioContext.sampleRate@dom/media/webaudio/AudioContext.cpp");'
+    )
     counts = (
         header.count(AUDIO_INLINE),
         header.count(AUDIO_DECL),

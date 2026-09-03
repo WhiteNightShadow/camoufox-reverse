@@ -59,6 +59,10 @@ class InjectorTests(unittest.TestCase):
         sites.append(injector.AUDIO_SITE)
         self.assertEqual(len(injector.HOOKS) + 1, 75)
         self.assertEqual(len(sites), len(set(sites)))
+        kinds = [hook.kind for hook in injector.HOOKS] + [injector.GET]
+        self.assertEqual(set(kinds), {injector.GET, injector.SET, injector.CALL})
+        self.assertEqual(kinds.count(injector.SET), 1)
+        self.assertGreater(kinds.count(injector.CALL), 10)
 
     def test_missing_file_and_symbol_fail_closed(self):
         with self.assertRaisesRegex(injector.InjectionError, "required file"):
@@ -114,6 +118,7 @@ class InjectorTests(unittest.TestCase):
         self.assertEqual(second["already"], 1)
         self.assertEqual(second["files_changed"], [])
         self.assertEqual(path.read_text().count(injector.INCLUDE_LINE), 1)
+        self.assertIn(f', {injector.GET}, "{hook.site_id}"', path.read_text())
         self.assertEqual((path.parent / "moz.build").read_text().count("/camoucfg"), 1)
         self.assertEqual((self.root / "moz.build").read_text().count("camoucfg"), 1)
 

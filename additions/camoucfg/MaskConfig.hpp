@@ -6,6 +6,7 @@ Written by daijro.
 #pragma once
 #include "json.hpp"
 #include "PropertyTracer.hpp"
+#include "nsXULAppAPI.h"
 #include <memory>
 #include <string>
 #include <tuple>
@@ -98,7 +99,11 @@ inline const nlohmann::json& GetJson() {
             }
           }
         }
-        if (!baseDir.empty()) {
+        const auto processType = XRE_GetProcessType();
+        const bool traceProcess =
+            processType == GeckoProcessType_Default ||
+            processType == GeckoProcessType_Content;
+        if (!baseDir.empty() && traceProcess) {
           camou::PropertyTracer::Instance().Initialize(
               baseDir, objects, maxEvents);
         }

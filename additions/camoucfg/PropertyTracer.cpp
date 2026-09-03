@@ -1,8 +1,12 @@
 #include "PropertyTracer.hpp"
 
 #include <chrono>
+#include <algorithm>
+#include <cerrno>
+#include <climits>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -12,22 +16,45 @@
 #  include <process.h>
 #  include <direct.h>
 typedef int pid_t;
-#  define open   _open
 #  define close  _close
 #  define write  _write
-#  define unlink _unlink
 #  define fsync  _commit
 #  define getpid _getpid
 #  ifndef O_CLOEXEC
-#    define O_CLOEXEC 0   // MSVC: handles are CLOEXEC-by-default unless _O_NOINHERIT cleared
+#    define O_CLOEXEC _O_NOINHERIT
+#  endif
+#  ifndef O_BINARY
+#    define O_BINARY _O_BINARY
 #  endif
 #else
 #  include <unistd.h>
+#  ifndef O_BINARY
+#    define O_BINARY 0
+#  endif
 #endif
 
 namespace camou {
 
 namespace {
+
+std::filesystem::path NativePath(const std::string& path) {
+  return std::filesystem::u8path(path);
+}
+
+int OpenTraceFile(const std::string& path) {
+#ifdef _WIN32
+  return _wopen(NativePath(path).c_str(),
+                O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_BINARY, 0600);
+#else
+  return open(path.c_str(),
+              O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_BINARY, 0600);
+#endif
+}
+
+void UnlinkPath(const std::string& path) {
+  std::error_code error;
+  std::filesystem::remove(NativePath(path), error);
+}
 
 // JSON string escaping
 void AppendJsonString(std::string& out, const std::string& s) {
@@ -63,12 +90,39 @@ void SerializeEvent(std::string& out, const PropertyAccessEvent& ev) {
   out.append(std::to_string(ev.tsMs));
   out.append(",\"k\":");
   out.append(std::to_string(ev.kind));
+  out.append(",\"u\":");
+  out.append(std::to_string(ev.tsUs));
+  out.append(",\"w\":");
+  out.append(std::to_string(ev.wallUs));
+  out.append(",\"q\":");
+  out.append(std::to_string(ev.sequence));
+  if (!ev.site.empty()) {
+    out.append(",\"s\":");
+    AppendJsonString(out, ev.site);
+  }
   out.append("}\n");
+}
+
+bool WriteAll(int fd, const char* data, size_t size) {
+  while (size > 0) {
+#ifdef _WIN32
+    const unsigned int chunk = static_cast<unsigned int>(
+        std::min<size_t>(size, static_cast<size_t>(INT_MAX)));
+    const int written = write(fd, data, chunk);
+#else
+    const ssize_t written = write(fd, data, size);
+#endif
+    if (written < 0 && errno == EINTR) continue;
+    if (written <= 0) return false;
+    data += written;
+    size -= static_cast<size_t>(written);
+  }
+  return true;
 }
 
 // Read single-line control file
 std::string ReadControlFile(const std::string& path) {
-  std::ifstream f(path);
+  std::ifstream f(NativePath(path));
   if (!f) return "";
   std::string line;
   std::getline(f, line);
@@ -81,10 +135,10 @@ std::string ReadControlFile(const std::string& path) {
 
 // Recursive mkdir
 void MkdirP(const std::string& path) {
-#ifdef _WIN32
-  _mkdir(path.c_str());
-#else
-  mkdir(path.c_str(), 0700);
+  std::error_code error;
+  std::filesystem::create_directories(NativePath(path), error);
+#ifndef _WIN32
+  chmod(path.c_str(), 0700);
 #endif
 }
 
@@ -98,6 +152,7 @@ void PropertyTracer::Initialize(const std::string& baseDir,
   // Build paths
   std::string controlDir = baseDir + "/control";
   mLogDir = baseDir + "/traces";
+  mDesiredPath = baseDir + "/desired.state";
   MkdirP(baseDir.c_str());
   MkdirP(controlDir.c_str());
   MkdirP(mLogDir.c_str());
@@ -107,6 +162,10 @@ void PropertyTracer::Initialize(const std::string& baseDir,
   snprintf(ctrlPath, sizeof(ctrlPath), "%s/control-%d.cmd",
            controlDir.c_str(), pid);
   mControlPath = ctrlPath;
+  char statusPath[1024];
+  snprintf(statusPath, sizeof(statusPath), "%s/status-%d.state",
+           controlDir.c_str(), pid);
+  mStatusPath = statusPath;
 
   mMaxEventsPerSession = maxEventsPerSession;
   mWhitelist.clear();
@@ -116,20 +175,29 @@ void PropertyTracer::Initialize(const std::string& baseDir,
 
   // Write initial "off" to control file
   {
-    std::ofstream f(mControlPath);
+    std::ofstream f(NativePath(mControlPath));
     f << "off";
   }
+#ifndef _WIN32
+  chmod(mControlPath.c_str(), 0600);
+#endif
 
   mInitialized = true;
   mStop.store(false);
 
-  // Auto-start: begin tracing immediately, before background threads start.
-  {
-    std::ofstream f(mControlPath);
-    f << "on";
-  }
   fprintf(stderr, "PropertyTracer: initialized, logDir=%s\n", mLogDir.c_str());
-  StartNewSession();
+  // A run-level desired state prevents a content process created during a stop
+  // transition from auto-starting a new trace behind the controller's back.
+  const bool autoStart = ReadControlFile(mDesiredPath) != "off";
+  {
+    std::ofstream f(NativePath(mControlPath));
+    f << (autoStart ? "on" : "off");
+  }
+  if (autoStart) {
+    StartNewSession();
+  } else {
+    WriteStatus("off");
+  }
 
   // Start background threads
   mControlThread = std::thread(&PropertyTracer::ControlThreadLoop, this);
@@ -138,7 +206,9 @@ void PropertyTracer::Initialize(const std::string& baseDir,
 
 void PropertyTracer::Shutdown() {
   if (!mInitialized) return;
+  mEnabled.store(false, std::memory_order_release);
   mStop.store(true);
+  mBufferCv.notify_all();
 
   if (mControlThread.joinable()) mControlThread.join();
   if (mFlushThread.joinable()) mFlushThread.join();
@@ -147,7 +217,10 @@ void PropertyTracer::Shutdown() {
 
   // Clean up control file
   if (!mControlPath.empty()) {
-    unlink(mControlPath.c_str());
+    UnlinkPath(mControlPath);
+  }
+  if (!mStatusPath.empty()) {
+    UnlinkPath(mStatusPath);
   }
 
   mInitialized = false;
@@ -160,8 +233,19 @@ bool PropertyTracer::ShouldRecord(const char* objName) const {
 }
 
 void PropertyTracer::RecordSlow(const char* object, const char* property,
-                                const char* value, uint32_t kind) {
+                                const char* value, uint32_t kind,
+                                const char* site, uint64_t generation) {
   if (!ShouldRecord(object)) return;
+
+  std::lock_guard<std::mutex> lock(mBufferMutex);
+  // Record() may have observed enabled=true immediately before a stop command.
+  if (!mEnabled.load(std::memory_order_acquire)) return;
+  if (mGeneration.load(std::memory_order_acquire) != generation) return;
+  if (mEventsThisSession >= mMaxEventsPerSession) {
+    mSaturated.store(true, std::memory_order_release);
+    ++mDroppedEventsThisSession;
+    return;
+  }
 
   // Truncate value
   std::string vStr;
@@ -175,34 +259,27 @@ void PropertyTracer::RecordSlow(const char* object, const char* property,
     }
   }
 
-  // Compute relative timestamp
-  int64_t tsMs = 0;
-  {
-    std::lock_guard<std::mutex> slock(mSessionMutex);
-    auto now = std::chrono::steady_clock::now();
-    tsMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-               now - mSessionStartTime)
-               .count();
-  }
+  // Use one steady-clock read. The wall-clock origin is captured when the
+  // session starts, so events from different Firefox processes can be merged.
+  const auto now = std::chrono::steady_clock::now();
+  const int64_t tsUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                           now - mSessionStartTime)
+                           .count();
 
   // Build JSONL line
   PropertyAccessEvent ev;
   ev.object = object ? object : "";
   ev.property = property ? property : "";
   ev.value = std::move(vStr);
-  ev.tsMs = tsMs;
+  ev.tsMs = tsUs / 1000;
+  ev.tsUs = tsUs;
+  ev.wallUs = mSessionStartWallUs + tsUs;
+  ev.sequence = mSequence++;
   ev.kind = kind;
-
-  std::string line;
-  line.reserve(200);
-  SerializeEvent(line, ev);
-
-  // Write directly to file (synchronous, no buffering)
-  std::lock_guard<std::mutex> lock(mSessionMutex);
-  if (mCurrentFd >= 0 && mEventsThisSession < mMaxEventsPerSession) {
-    (void)write(mCurrentFd, line.data(), line.size());
-    mEventsThisSession++;
-  }
+  ev.site = site ? site : "";
+  mWriteBuffer.emplace_back(std::move(ev));
+  ++mEventsThisSession;
+  if (mWriteBuffer.size() >= 256) mBufferCv.notify_one();
 }
 
 void PropertyTracer::ControlThreadLoop() {
@@ -212,8 +289,13 @@ void PropertyTracer::ControlThreadLoop() {
     if (cmd != lastCmd) {
       if (cmd == "on" && !mEnabled.load()) {
         StartNewSession();
-      } else if (cmd == "off" && mEnabled.load()) {
-        StopSession();
+      } else if (cmd == "off") {
+        if (mEnabled.load()) {
+          StopSession();
+        } else {
+          // Clear a previous start/open error so a later on command can retry.
+          WriteStatus("off");
+        }
       }
       lastCmd = cmd;
     }
@@ -222,37 +304,63 @@ void PropertyTracer::ControlThreadLoop() {
 }
 
 void PropertyTracer::FlushThreadLoop() {
-  while (!mStop.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // Double-buffer swap
+  while (true) {
     {
+      std::unique_lock<std::mutex> lock(mBufferMutex);
+      mBufferCv.wait_for(lock, std::chrono::milliseconds(100), [this]() {
+        return mStop.load() || mWriteBuffer.size() >= 256;
+      });
+    }
+    FlushPending();
+    if (mStop.load()) {
       std::lock_guard<std::mutex> lock(mBufferMutex);
-      if (mWriteBuffer.empty()) continue;
-      std::swap(mWriteBuffer, mFlushBuffer);
+      if (mWriteBuffer.empty()) break;
     }
-
-    // Write to disk (no lock held)
-    int fd;
-    {
-      std::lock_guard<std::mutex> lock(mSessionMutex);
-      fd = mCurrentFd;
-    }
-    if (fd < 0) {
-      mFlushBuffer.clear();
-      continue;
-    }
-
-    std::string batch;
-    batch.reserve(mFlushBuffer.size() * 120);
-    for (const auto& ev : mFlushBuffer) {
-      SerializeEvent(batch, ev);
-    }
-    if (!batch.empty()) {
-      (void)write(fd, batch.data(), batch.size());
-    }
-    mFlushBuffer.clear();
   }
+}
+
+void PropertyTracer::FlushPending() {
+  // Serialize the complete swap+write operation. StopSession uses the same
+  // gate, so it cannot close the descriptor while another flush is in flight.
+  std::lock_guard<std::mutex> flushLock(mFlushMutex);
+  std::vector<PropertyAccessEvent> pending;
+  {
+    std::lock_guard<std::mutex> lock(mBufferMutex);
+    if (mWriteBuffer.empty()) return;
+    pending.swap(mWriteBuffer);
+  }
+  WriteBatch(pending);
+}
+
+void PropertyTracer::WriteBatch(
+    const std::vector<PropertyAccessEvent>& events) {
+  if (events.empty()) return;
+  std::string batch;
+  batch.reserve(events.size() * 180);
+  for (const auto& ev : events) SerializeEvent(batch, ev);
+
+  // Keep the descriptor valid for the complete write. StopSession takes this
+  // same mutex before fsync/close, eliminating the old flush-vs-close race.
+  std::lock_guard<std::mutex> lock(mSessionMutex);
+  if (mCurrentFd >= 0 && !WriteAll(mCurrentFd, batch.data(), batch.size())) {
+    mWriteFailed.store(true, std::memory_order_release);
+    WriteStatus("error");
+    fprintf(stderr, "PropertyTracer: failed to write trace batch: %s\n",
+            strerror(errno));
+  }
+}
+
+void PropertyTracer::WriteStatus(const char* state, const char* detail) {
+  if (mStatusPath.empty()) return;
+  std::ofstream file(NativePath(mStatusPath), std::ios::trunc);
+  if (!file) return;
+  file << state << " " << (mSessionId == 0 ? 0 : mSessionId - 1);
+  if (detail) file << " " << detail;
+  file << "\n";
+  file.flush();
+#ifndef _WIN32
+  chmod(mStatusPath.c_str(), 0600);
+#endif
 }
 
 void PropertyTracer::StartNewSession() {
@@ -265,36 +373,61 @@ void PropertyTracer::StartNewSession() {
   snprintf(path, sizeof(path), "%s/%d_%u.jsonl",
            mLogDir.c_str(), pid, mSessionId++);
 
-  int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0666);
-  if (fd < 0) {
-    // Content process sandbox may block writes. Try /tmp as fallback.
-    snprintf(path, sizeof(path), "/tmp/camoufox-trace-%d_%u.jsonl",
-             pid, mSessionId - 1);
-    fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0666);
+  int fd = OpenTraceFile(path);
+  while (fd < 0 && errno == EEXIST) {
+    snprintf(path, sizeof(path), "%s/%d_%u.jsonl",
+             mLogDir.c_str(), pid, mSessionId++);
+    fd = OpenTraceFile(path);
   }
-  if (fd < 0) return;
+  if (fd < 0) {
+    WriteStatus("error");
+    fprintf(stderr, "PropertyTracer: failed to create trace file: %s\n",
+            strerror(errno));
+    return;
+  }
 
   mCurrentFd = fd;
   mCurrentLogPath = path;
-  mSessionStartTime = std::chrono::steady_clock::now();
-  mEventsThisSession = 0;
+  {
+    std::lock_guard<std::mutex> bufferLock(mBufferMutex);
+    mSessionStartTime = std::chrono::steady_clock::now();
+    mSessionStartWallUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    mEventsThisSession = 0;
+    mDroppedEventsThisSession = 0;
+    mSequence = 0;
+    mSaturated.store(false, std::memory_order_release);
+    mWriteFailed.store(false, std::memory_order_release);
+    mGeneration.fetch_add(1, std::memory_order_acq_rel);
+  }
 
   mEnabled.store(true, std::memory_order_release);
+  WriteStatus("on");
 }
 
 void PropertyTracer::StopSession() {
   mEnabled.store(false, std::memory_order_release);
-
-  // Wait for flush thread to drain last batch
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  FlushPending();
 
   std::lock_guard<std::mutex> lock(mSessionMutex);
   if (mCurrentFd >= 0) {
-    fsync(mCurrentFd);
+    if (fsync(mCurrentFd) != 0) {
+      mWriteFailed.store(true, std::memory_order_release);
+      fprintf(stderr, "PropertyTracer: failed to sync trace file: %s\n",
+              strerror(errno));
+    }
     close(mCurrentFd);
     mCurrentFd = -1;
   }
+  if (mDroppedEventsThisSession > 0) {
+    fprintf(stderr,
+            "PropertyTracer: session event cap reached; later events skipped\n");
+  }
+  WriteStatus("off",
+              mWriteFailed.load(std::memory_order_acquire) ? "write_error"
+                                                           : nullptr);
 }
 
 }  // namespace camou
-

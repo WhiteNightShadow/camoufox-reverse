@@ -99,6 +99,7 @@ dir:
 test-trace-injector:
 	python3 -m unittest -v \
 		tests.test_inject_trace_to_source \
+		tests.test_property_tracer_runtime \
 		tests.test_install_camoufox_reverse \
 		tests.test_build_state_path
 

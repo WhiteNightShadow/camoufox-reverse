@@ -4,9 +4,21 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v152.0.4-beta.30-reverse.3"
+      - "v152.0.4-beta.30-reverse.4"
 
 jobs:
+  property-tracer-windows-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile and run native PropertyTracer smoke in a Unicode path
+        run: |
+          clang++ --version
+          python -m unittest -v tests.test_property_tracer_runtime
+
   build:
     runs-on: ubuntu-24.04
     strategy:
@@ -138,7 +150,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: build
+    needs: [build, property-tracer-windows-smoke]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -202,10 +214,21 @@ jobs:
                   'schema': 1,
                   'distribution': 'WhiteNightShadow/camoufox-reverse',
                   'upstream_version': '152.0.4-beta.30',
-                  'reverse_release': 'reverse.3',
+                  'reverse_release': 'reverse.4',
                   'property_trace': True,
                   'property_trace_protocol': 1,
                   'property_trace_hooks': 75,
+                  'property_trace_features': [
+                      'async_buffered_io',
+                      'event_kind',
+                      'native_site',
+                      'wall_time_us',
+                      'sequence',
+                      'exclusive_session_files',
+                      'control_ack',
+                      'utf8_paths',
+                      'process_scope',
+                  ],
               }
               if capability != required_capability:
                   raise SystemExit(f'{name}: invalid capability marker: {capability}')
@@ -222,9 +245,21 @@ jobs:
               'schema': 1,
               'upstream_tag': 'v152.0.4-beta.30',
               'upstream_commit': '5d06ec1',
-              'reverse_release': 'reverse.3',
+              'reverse_release': 'reverse.4',
               'reverse_commit': '${{ github.sha }}',
+              'property_trace_protocol': 1,
               'property_trace_hooks': 75,
+              'property_trace_features': [
+                  'async_buffered_io',
+                  'event_kind',
+                  'native_site',
+                  'wall_time_us',
+                  'sequence',
+                  'exclusive_session_files',
+                  'control_ack',
+                  'utf8_paths',
+                  'process_scope',
+              ],
               'assets': assets,
           }, indent=2) + '\n', encoding='utf-8')
           PY
@@ -239,10 +274,21 @@ jobs:
             BUILD-MANIFEST.json
             scripts/install-camoufox-reverse.py
           generate_release_notes: true
-          body_path: docs/releases/v152.0.4-beta.30-reverse.3.md
-          draft: false
-          prerelease: true
+          body_path: docs/releases/v152.0.4-beta.30-reverse.4.md
+          draft: true
+          prerelease: false
           make_latest: false
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload verified release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: CamoufoxReverse-verified-bundle
+          path: |
+            camoufox-*.zip
+            SHA256SUMS
+            BUILD-MANIFEST.json
+            scripts/install-camoufox-reverse.py
+          if-no-files-found: error

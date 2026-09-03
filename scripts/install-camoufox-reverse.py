@@ -22,7 +22,18 @@ import re
 
 CAPABILITIES_FILE = "camoufox-reverse-capabilities.json"
 EXPECTED_DISTRIBUTION = "WhiteNightShadow/camoufox-reverse"
-EXPECTED_REVERSE_RELEASE = "reverse.3"
+EXPECTED_REVERSE_RELEASE = "reverse.4"
+REQUIRED_TRACE_FEATURES = {
+    "async_buffered_io",
+    "event_kind",
+    "native_site",
+    "wall_time_us",
+    "sequence",
+    "exclusive_session_files",
+    "control_ack",
+    "utf8_paths",
+    "process_scope",
+}
 MAX_MEMBERS = 50_000
 MAX_TOTAL_SIZE = 4 * 1024 * 1024 * 1024
 MAX_SINGLE_FILE_SIZE = 2 * 1024 * 1024 * 1024
@@ -180,6 +191,15 @@ def install_archive(
             raise InstallError("unsupported PropertyTracer protocol")
         if capabilities.get("property_trace_hooks") != 75:
             raise InstallError("archive does not contain the expected 75 trace hooks")
+        features = capabilities.get("property_trace_features")
+        if not isinstance(features, list):
+            raise InstallError("archive does not declare PropertyTracer feature metadata")
+        missing_features = REQUIRED_TRACE_FEATURES - {str(item) for item in features}
+        if missing_features:
+            raise InstallError(
+                "archive is missing PropertyTracer features: "
+                + ", ".join(sorted(missing_features))
+            )
         names = {member.filename.rstrip("/") for member in members}
         executable = PLATFORM_EXECUTABLE[asset_match.group("platform")]
         if executable not in names:
