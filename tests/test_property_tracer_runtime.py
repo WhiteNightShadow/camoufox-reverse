@@ -108,7 +108,10 @@ int main(int argc, char** argv) {
 
 class PropertyTracerRuntimeTests(unittest.TestCase):
     def test_buffered_events_are_complete_typed_and_drained(self):
-        compiler = shutil.which("c++") or shutil.which("g++") or shutil.which("clang++")
+        if os.name == "nt":
+            compiler = shutil.which("clang++")
+        else:
+            compiler = shutil.which("c++") or shutil.which("g++") or shutil.which("clang++")
         if not compiler:
             self.skipTest("no C++ compiler available")
 
@@ -140,8 +143,6 @@ class PropertyTracerRuntimeTests(unittest.TestCase):
             subprocess.run(
                 command,
                 check=True,
-                capture_output=True,
-                text=True,
             )
             subprocess.run([str(binary), str(trace_root)], check=True, timeout=20)
 
