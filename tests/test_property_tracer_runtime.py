@@ -138,7 +138,9 @@ class PropertyTracerRuntimeTests(unittest.TestCase):
                 "-o",
                 str(binary),
             ]
-            if os.name != "nt":
+            if os.name == "nt":
+                command.insert(2, "-D_CRT_SECURE_NO_WARNINGS")
+            else:
                 command.insert(2, "-pthread")
             subprocess.run(
                 command,
