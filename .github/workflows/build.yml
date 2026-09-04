@@ -264,6 +264,37 @@ jobs:
           }, indent=2) + '\n', encoding='utf-8')
           PY
 
+      - name: Validate Chinese release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          python - <<'PY'
+          import pathlib
+
+          path = pathlib.Path("docs/releases/v152.0.4-beta.30-reverse.5.md")
+          text = path.read_text(encoding="utf-8")
+          lines = text.splitlines()
+          headings = [line for line in lines if line.startswith("## ")]
+          allowed = ["## 版本说明", "## 主要变更", "## 兼容性", "## 验证", "## 相关版本", "## 致谢"]
+          positions = [allowed.index(item) for item in headings if item in allowed]
+          if (
+              headings[:2] != allowed[:2]
+              or len(headings) != len(set(headings))
+              or len(positions) != len(headings)
+              or positions != sorted(positions)
+          ):
+              raise SystemExit(f"release note headings are invalid: {headings}")
+          main_start = lines.index("## 主要变更") + 1
+          main_end = next(
+              (index for index in range(main_start, len(lines)) if lines[index].startswith("## ")),
+              len(lines),
+          )
+          main_items = [line for line in lines[main_start:main_end] if line.startswith("- ")]
+          if not 2 <= len(main_items) <= 4:
+              raise SystemExit("release notes must contain 2-4 main changes")
+          if "**完整变更**：" not in text or not any("\u4e00" <= char <= "\u9fff" for char in text):
+              raise SystemExit("release notes must use the Chinese template")
+          PY
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -273,7 +304,7 @@ jobs:
             SHA256SUMS
             BUILD-MANIFEST.json
             scripts/install-camoufox-reverse.py
-          generate_release_notes: true
+          generate_release_notes: false
           body_path: docs/releases/v152.0.4-beta.30-reverse.5.md
           draft: true
           prerelease: false
